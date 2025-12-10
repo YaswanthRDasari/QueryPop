@@ -93,7 +93,7 @@ export const QueryInterface: React.FC = () => {
                 <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-2">
                         <Database className="text-primary-600" size={20} />
-                        <h1 className="font-bold text-slate-800">DBCoPilot</h1>
+                        <h1 className="font-bold text-slate-800">QueryPop</h1>
                     </div>
                     <div className="text-xs text-slate-400">Connected</div>
                 </header>

@@ -19,15 +19,8 @@ class DBConnector:
             # Basic validation of string format
             if connection_string.startswith("mysql://"):
                 self.db_type = "mysql"
-                # Ensure we use mysql-connector if not specified
-                if "mysql+mysqlconnector://" not in connection_string:
-                     # This is a simplification; users might provide standard URI. 
-                     # SQLAlchemy defaults for mysql:// might be mysql-python or similar.
-                     # Let's try to detect or force a supported driver if needed, 
-                     # but for MVP, let's trust sqlalchemy's auto-detect or allow user to be specific.
-                     # However, requirements.txt has mysql-connector-python.
-                     # It's safer to hint the driver if we can, or just let SQLAlchemy handle it.
-                     pass
+                # Replace mysql:// with mysql+mysqlconnector:// to use mysql-connector-python
+                connection_string = connection_string.replace("mysql://", "mysql+mysqlconnector://", 1)
             elif connection_string.startswith("postgres://") or connection_string.startswith("postgresql://"):
                 self.db_type = "postgresql"
                 if connection_string.startswith("postgres://"):

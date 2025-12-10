@@ -1,4 +1,4 @@
-# DBCoPilot (MVP)
+# QueryPop (MVP)
 
 An AI-assisted database GUI tool that lets you ask questions about your data in natural language.
 

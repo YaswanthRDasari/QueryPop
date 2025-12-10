@@ -1,10 +1,11 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response, make_response
 from flask_cors import CORS
 from config import Config
 from db_connector import DBConnector
 from schema_inspector import SchemaInspector
 from llm_query_generator import LLMQueryGenerator
 from query_executor import QueryExecutor
+from table_manager import TableManager
 from logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -21,10 +22,11 @@ db_connector = DBConnector()
 schema_inspector = SchemaInspector()
 llm_generator = LLMQueryGenerator()
 query_executor = QueryExecutor(db_connector)
+table_manager = TableManager(db_connector)
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    return jsonify({"status": "ok", "service": "DBCoPilot Backend"}), 200
+    return jsonify({"status": "ok", "service": "QueryPop Backend"}), 200
 
 @app.route('/api/connect', methods=['POST'])
 def connect_db():
@@ -51,6 +53,75 @@ def connect_db():
         }), 200
     else:
         return jsonify({"success": False, "message": message}), 400
+
+# ============ Table Management Endpoints ============
+
+@app.route('/api/tables', methods=['GET'])
+def get_tables():
+    """Get list of all tables."""
+    result = table_manager.get_tables()
+    if result["success"]:
+        return jsonify(result), 200
+    return jsonify(result), 400
+
+@app.route('/api/tables/<table_name>/structure', methods=['GET'])
+def get_table_structure(table_name):
+    """Get structure of a specific table."""
+    result = table_manager.get_table_structure(table_name)
+    if result["success"]:
+        return jsonify(result), 200
+    return jsonify(result), 400
+
+@app.route('/api/tables/<table_name>/data', methods=['GET'])
+def get_table_data(table_name):
+    """Get paginated data from a table."""
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)
+    order_by = request.args.get('order_by', None)
+    order_dir = request.args.get('order_dir', 'asc')
+    
+    result = table_manager.get_table_data(table_name, page, per_page, order_by, order_dir)
+    if result["success"]:
+        return jsonify(result), 200
+    return jsonify(result), 400
+
+@app.route('/api/tables/<table_name>/rows', methods=['POST'])
+def insert_row(table_name):
+    """Insert a new row into the table."""
+    data = request.json
+    if not data:
+        return jsonify({"success": False, "error": "Row data required"}), 400
+    
+    result = table_manager.insert_row(table_name, data)
+    if result["success"]:
+        return jsonify(result), 201
+    return jsonify(result), 400
+
+@app.route('/api/tables/<table_name>/rows/<pk_value>', methods=['PUT'])
+def update_row(table_name, pk_value):
+    """Update a row in the table."""
+    data = request.json
+    pk_column = request.args.get('pk_column', 'id')
+    
+    if not data:
+        return jsonify({"success": False, "error": "Row data required"}), 400
+    
+    result = table_manager.update_row(table_name, pk_column, pk_value, data)
+    if result["success"]:
+        return jsonify(result), 200
+    return jsonify(result), 400
+
+@app.route('/api/tables/<table_name>/rows/<pk_value>', methods=['DELETE'])
+def delete_row(table_name, pk_value):
+    """Delete a row from the table."""
+    pk_column = request.args.get('pk_column', 'id')
+    
+    result = table_manager.delete_row(table_name, pk_column, pk_value)
+    if result["success"]:
+        return jsonify(result), 200
+    return jsonify(result), 400
+
+# ============ Query Endpoints ============
 
 @app.route('/api/query/generate', methods=['POST'])
 def generate_query():
@@ -92,6 +163,79 @@ def get_history():
     limit = request.args.get('limit', 20, type=int)
     history = query_executor.get_history(limit)
     return jsonify(history), 200
+
+# ============ Export Endpoints ============
+
+@app.route('/api/tables/<table_name>/export/csv', methods=['GET'])
+def export_table_csv(table_name):
+    """Export table data as CSV."""
+    from export_manager import ExportManager
+    export_manager = ExportManager(db_connector)
+    
+    csv_content, error = export_manager.export_to_csv(table_name)
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+    
+    response = make_response(csv_content)
+    response.headers['Content-Type'] = 'text/csv'
+    response.headers['Content-Disposition'] = f'attachment; filename={table_name}.csv'
+    return response
+
+@app.route('/api/tables/<table_name>/export/sql', methods=['GET'])
+def export_table_sql(table_name):
+    """Export table as SQL."""
+    from export_manager import ExportManager
+    export_manager = ExportManager(db_connector)
+    
+    sql_content, error = export_manager.export_to_sql(table_name)
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+    
+    response = make_response(sql_content)
+    response.headers['Content-Type'] = 'application/sql'
+    response.headers['Content-Disposition'] = f'attachment; filename={table_name}.sql'
+    return response
+
+@app.route('/api/export/database', methods=['GET'])
+def export_database():
+    """Export entire database as SQL."""
+    from export_manager import ExportManager
+    export_manager = ExportManager(db_connector)
+    
+    sql_content, error = export_manager.export_database_sql()
+    if error:
+        return jsonify({"success": False, "error": error}), 400
+    
+    response = make_response(sql_content)
+    response.headers['Content-Type'] = 'application/sql'
+    response.headers['Content-Disposition'] = 'attachment; filename=database_export.sql'
+    return response
+
+# ============ Import Endpoints ============
+
+@app.route('/api/import/sql', methods=['POST'])
+def import_sql():
+    """Import SQL file."""
+    from import_manager import ImportManager
+    import_manager = ImportManager(db_connector)
+    
+    # Check for file upload
+    if 'file' in request.files:
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"success": False, "error": "No file selected"}), 400
+        sql_content = file.read().decode('utf-8')
+    elif request.json and 'sql' in request.json:
+        sql_content = request.json['sql']
+    else:
+        return jsonify({"success": False, "error": "No SQL content provided"}), 400
+    
+    result = import_manager.import_sql(sql_content)
+    if result["success"]:
+        # Refresh schema cache after import
+        schema_inspector.inspect_and_cache_schema(db_connector)
+        return jsonify(result), 200
+    return jsonify(result), 400
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

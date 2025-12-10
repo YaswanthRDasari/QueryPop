@@ -3,7 +3,7 @@ import json
 from app import app
 from unittest.mock import patch, MagicMock
 
-class DBCoPilotTestCase(unittest.TestCase):
+class QueryPopTestCase(unittest.TestCase):
     def setUp(self):
         self.app = app.test_client()
         self.app.testing = True

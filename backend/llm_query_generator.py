@@ -23,7 +23,7 @@ class LLMQueryGenerator:
             else:
                 logger.info("Using OpenAI")
                 self.client = OpenAI(api_key=Config.OPENAI_API_KEY)
-                self.model = "gpt-4o" # Fallback to gpt-3.5-turbo if needed
+                self.model = "gpt-4o-mini" # Fallback to gpt-3.5-turbo if needed
         except Exception as e:
             logger.error(f"Failed to setup LLM client: {e}")
 

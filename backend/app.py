@@ -24,6 +24,22 @@ llm_generator = LLMQueryGenerator()
 query_executor = QueryExecutor(db_connector)
 table_manager = TableManager(db_connector)
 
+from functools import wraps
+
+def require_db_connection(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not db_connector.is_connected():
+            # Try to auto-reconnect
+            if not db_connector.try_reconnect():
+                return jsonify({
+                    "success": False, 
+                    "error": "Database not connected. Please connect first.",
+                    "code": "DB_NOT_CONNECTED"
+                }), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     return jsonify({"status": "ok", "service": "QueryPop Backend"}), 200
@@ -57,6 +73,7 @@ def connect_db():
 # ============ Table Management Endpoints ============
 
 @app.route('/api/tables', methods=['GET'])
+@require_db_connection
 def get_tables():
     """Get list of all tables."""
     result = table_manager.get_tables()
@@ -65,6 +82,7 @@ def get_tables():
     return jsonify(result), 400
 
 @app.route('/api/tables/<table_name>/structure', methods=['GET'])
+@require_db_connection
 def get_table_structure(table_name):
     """Get structure of a specific table."""
     result = table_manager.get_table_structure(table_name)
@@ -73,6 +91,7 @@ def get_table_structure(table_name):
     return jsonify(result), 400
 
 @app.route('/api/tables/<table_name>/data', methods=['GET'])
+@require_db_connection
 def get_table_data(table_name):
     """Get paginated data from a table."""
     page = request.args.get('page', 1, type=int)
@@ -86,6 +105,7 @@ def get_table_data(table_name):
     return jsonify(result), 400
 
 @app.route('/api/tables/<table_name>/rows', methods=['POST'])
+@require_db_connection
 def insert_row(table_name):
     """Insert a new row into the table."""
     data = request.json
@@ -98,6 +118,7 @@ def insert_row(table_name):
     return jsonify(result), 400
 
 @app.route('/api/tables/<table_name>/rows/<pk_value>', methods=['PUT'])
+@require_db_connection
 def update_row(table_name, pk_value):
     """Update a row in the table."""
     data = request.json
@@ -112,6 +133,7 @@ def update_row(table_name, pk_value):
     return jsonify(result), 400
 
 @app.route('/api/tables/<table_name>/rows/<pk_value>', methods=['DELETE'])
+@require_db_connection
 def delete_row(table_name, pk_value):
     """Delete a row from the table."""
     pk_column = request.args.get('pk_column', 'id')
@@ -124,6 +146,7 @@ def delete_row(table_name, pk_value):
 # ============ Query Endpoints ============
 
 @app.route('/api/query/generate', methods=['POST'])
+@require_db_connection
 def generate_query():
     data = request.json
     question = data.get('question')
@@ -143,6 +166,7 @@ def generate_query():
         return jsonify({"error": "Failed to generate SQL"}), 500
 
 @app.route('/api/query/execute', methods=['POST'])
+@require_db_connection
 def execute_query():
     data = request.json
     sql = data.get('sql')
@@ -159,6 +183,7 @@ def execute_query():
         return jsonify(result), 400
 
 @app.route('/api/query-history', methods=['GET'])
+@require_db_connection
 def get_history():
     limit = request.args.get('limit', 20, type=int)
     history = query_executor.get_history(limit)
@@ -167,6 +192,7 @@ def get_history():
 # ============ Export Endpoints ============
 
 @app.route('/api/tables/<table_name>/export/csv', methods=['GET'])
+@require_db_connection
 def export_table_csv(table_name):
     """Export table data as CSV."""
     from export_manager import ExportManager
@@ -182,6 +208,7 @@ def export_table_csv(table_name):
     return response
 
 @app.route('/api/tables/<table_name>/export/sql', methods=['GET'])
+@require_db_connection
 def export_table_sql(table_name):
     """Export table as SQL."""
     from export_manager import ExportManager
@@ -197,6 +224,7 @@ def export_table_sql(table_name):
     return response
 
 @app.route('/api/export/database', methods=['GET'])
+@require_db_connection
 def export_database():
     """Export entire database as SQL."""
     from export_manager import ExportManager
@@ -214,6 +242,7 @@ def export_database():
 # ============ Import Endpoints ============
 
 @app.route('/api/import/sql', methods=['POST'])
+@require_db_connection
 def import_sql():
     """Import SQL file."""
     from import_manager import ImportManager

@@ -25,9 +25,27 @@ export const DatabaseBrowser: React.FC = () => {
     const [isImporting, setIsImporting] = useState(false);
     const [importResult, setImportResult] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const hasFetchedTables = useRef(false);
 
     useEffect(() => {
-        loadTables();
+        if (hasFetchedTables.current) return;
+        hasFetchedTables.current = true;
+
+        const fetchTables = async () => {
+            setLoading(true);
+            const result = await tableApi.getTables();
+            if (result.success && result.tables) {
+                setTables(result.tables);
+                if (result.tables.length > 0) {
+                    setSelectedTable(result.tables[0].name);
+                }
+            } else {
+                setError(result.error || 'Failed to load tables');
+            }
+            setLoading(false);
+        };
+
+        fetchTables();
     }, []);
 
     useEffect(() => {

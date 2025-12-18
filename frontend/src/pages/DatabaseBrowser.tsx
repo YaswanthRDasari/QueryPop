@@ -1,11 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { tableApi } from '../services/api';
+import { Database, Table, Columns, RefreshCw, ChevronLeft, ChevronRight, Plus, Trash2, Pencil, Save, X, Loader2, Download, FileText, FileCode, Upload, ChevronDown } from 'lucide-react';
+import Swal from 'sweetalert2';
+import { dbApi, tableApi } from '../services/api';
 import type { TableInfo, TableDataResponse, ColumnInfo } from '../types';
-import { Database, Table, Columns, RefreshCw, ChevronLeft, ChevronRight, Plus, Trash2, Pencil, Save, X, Loader2, Download, FileText, FileCode, Upload } from 'lucide-react';
+
+interface EditingCell {
+    rowPk: string | number;
+    colName: string;
+}
 
 export const DatabaseBrowser: React.FC = () => {
     const navigate = useNavigate();
+    const [databases, setDatabases] = useState<string[]>([]);
+    const [expandedDb, setExpandedDb] = useState<string | null>(null);
     const [tables, setTables] = useState<TableInfo[]>([]);
     const [selectedTable, setSelectedTable] = useState<string | null>(null);
     const [tableData, setTableData] = useState<TableDataResponse | null>(null);
@@ -17,36 +25,32 @@ export const DatabaseBrowser: React.FC = () => {
     const [perPage] = useState(25);
 
     // Editing state
-    const [editingRowPk, setEditingRowPk] = useState<string | number | null>(null);
-    const [editingData, setEditingData] = useState<Record<string, any>>({});
+    const [editingCell, setEditingCell] = useState<EditingCell | null>(null);
+    const [editingValue, setEditingValue] = useState<string>('');
     const [isAddingRow, setIsAddingRow] = useState(false);
     const [newRowData, setNewRowData] = useState<Record<string, any>>({});
     const [showExportMenu, setShowExportMenu] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
     const [importResult, setImportResult] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const hasFetchedTables = useRef(false);
+    const hasFetchedDatabases = useRef(false);
 
     useEffect(() => {
-        if (hasFetchedTables.current) return;
-        hasFetchedTables.current = true;
-
-        const fetchTables = async () => {
-            setLoading(true);
-            const result = await tableApi.getTables();
-            if (result.success && result.tables) {
-                setTables(result.tables);
-                if (result.tables.length > 0) {
-                    setSelectedTable(result.tables[0].name);
-                }
-            } else {
-                setError(result.error || 'Failed to load tables');
-            }
-            setLoading(false);
-        };
-
-        fetchTables();
+        if (hasFetchedDatabases.current) return;
+        hasFetchedDatabases.current = true;
+        fetchDatabases();
     }, []);
+
+    const fetchDatabases = async () => {
+        setLoading(true);
+        const result = await dbApi.getDatabases();
+        if (result.success && result.databases) {
+            setDatabases(result.databases);
+        } else {
+            setError(result.error || 'Failed to load databases');
+        }
+        setLoading(false);
+    };
 
     useEffect(() => {
         if (selectedTable) {
@@ -55,14 +59,45 @@ export const DatabaseBrowser: React.FC = () => {
         }
     }, [selectedTable, page]);
 
+    const handleDatabaseSelect = async (dbName: string) => {
+        if (expandedDb === dbName) {
+            setExpandedDb(null); // Collapse
+            return;
+        }
+
+        setLoading(true);
+        setError(null);
+        // Switch context
+        const connectResult = await dbApi.switchDatabase(dbName);
+        if (connectResult.success) {
+            setExpandedDb(dbName);
+            // Fetch tables for this db
+            const result = await tableApi.getTables();
+            if (result.success && result.tables) {
+                setTables(result.tables);
+                setSelectedTable(null); // Reset table selection
+            } else {
+                setError(result.error || 'Failed to load tables');
+            }
+        } else {
+            setError(connectResult.message || 'Failed to switch database');
+        }
+        setLoading(false);
+    };
+
+    const handleTableSelect = (tableName: string) => {
+        setSelectedTable(tableName);
+        setPage(1);
+        setEditingCell(null);
+        setIsAddingRow(false);
+    };
+
     const loadTables = async () => {
+        if (!expandedDb) return;
         setLoading(true);
         const result = await tableApi.getTables();
         if (result.success && result.tables) {
             setTables(result.tables);
-            if (result.tables.length > 0 && !selectedTable) {
-                setSelectedTable(result.tables[0].name);
-            }
         } else {
             setError(result.error || 'Failed to load tables');
         }
@@ -88,18 +123,10 @@ export const DatabaseBrowser: React.FC = () => {
         }
     };
 
-    const handleTableSelect = (tableName: string) => {
-        setSelectedTable(tableName);
-        setPage(1);
-        setEditingRowPk(null);
-        setIsAddingRow(false);
-    };
-
     const getPrimaryKeyValue = (row: Record<string, any>): string | number => {
         if (primaryKeys.length > 0) {
             return row[primaryKeys[0]];
         }
-        // Fallback to id or first column
         return row['id'] || row[Object.keys(row)[0]];
     };
 
@@ -110,31 +137,95 @@ export const DatabaseBrowser: React.FC = () => {
         return 'id';
     };
 
-    // Edit handlers
-    const startEditing = (row: Record<string, any>) => {
-        setEditingRowPk(getPrimaryKeyValue(row));
-        setEditingData({ ...row });
+    const handleCellClick = (row: Record<string, any>, col: string) => {
+        const pkValue = getPrimaryKeyValue(row);
+        // Don't restart edit if already editing this cell
+        if (editingCell?.rowPk === pkValue && editingCell?.colName === col) return;
+
+        setEditingCell({ rowPk: pkValue, colName: col });
+        setEditingValue(row[col] === null ? '' : String(row[col]));
     };
 
-    const cancelEditing = () => {
-        setEditingRowPk(null);
-        setEditingData({});
-    };
+    const saveCellEdit = async () => {
+        if (!selectedTable || !editingCell) return;
 
-    const saveEdit = async () => {
-        if (!selectedTable || editingRowPk === null) return;
+        // Find original row to get old value
+        const originalRow = tableData?.rows?.find(r => getPrimaryKeyValue(r) === editingCell.rowPk);
+        const originalValue = originalRow ? originalRow[editingCell.colName] : 'Unknown';
 
-        const result = await tableApi.updateRow(selectedTable, editingRowPk, getPrimaryKeyColumn(), editingData);
-        if (result.success) {
-            await loadTableData(selectedTable, page);
-            setEditingRowPk(null);
-            setEditingData({});
+        // Convert to string for comparison and display, handling null/undefined
+        const originalStr = originalValue === null ? 'NULL' : String(originalValue);
+
+        // UX: If value hasn't changed, just exit without annoyance
+        if (originalStr === editingValue || (originalValue === null && editingValue === '')) {
+            setEditingCell(null);
+            setEditingValue('');
+            return;
+        }
+
+        const { isConfirmed } = await Swal.fire({
+            title: 'Confirm Update',
+            html: `
+                <div class="text-left text-sm">
+                    <p class="mb-2">Updating column <b>${editingCell.colName}</b>:</p>
+                    <div class="grid grid-cols-[80px_1fr] gap-2 items-center">
+                        <span class="text-slate-500">Old Value:</span>
+                        <code class="bg-red-50 text-red-700 px-2 py-1 rounded border border-red-200 block truncate">${originalStr}</code>
+                        
+                        <span class="text-slate-500">New Value:</span>
+                        <code class="bg-green-50 text-green-700 px-2 py-1 rounded border border-green-200 block truncate">${editingValue}</code>
+                    </div>
+                </div>
+            `,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#3085d6',
+            cancelButtonColor: '#d33',
+            confirmButtonText: 'Yes, update it!'
+        });
+
+        if (isConfirmed) {
+            const data = { [editingCell.colName]: editingValue };
+            const result = await tableApi.updateRow(selectedTable, editingCell.rowPk, getPrimaryKeyColumn(), data);
+
+            if (result.success) {
+                await loadTableData(selectedTable, page);
+                setEditingCell(null);
+                setEditingValue('');
+                Swal.fire({
+                    title: 'Updated!',
+                    text: 'The cell has been updated.',
+                    icon: 'success',
+                    timer: 1500
+                });
+            } else {
+                setError(result.error || 'Update failed');
+            }
         } else {
-            setError(result.error || 'Update failed');
+            // Cancelled, reset edit state
+            setEditingCell(null);
+            setEditingValue('');
         }
     };
 
-    // Add row handlers
+    const handleCellBlur = () => {
+        // We use a small timeout to allow other events (like formatting buttons if we had them) to fire
+        // But mainly to detach execution from the immediate blur event
+        // Note: In some UX, clicking away might NOT want to save. 
+        // But requirement says "when user clicks outside... ask for confirmation"
+        saveCellEdit();
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            e.preventDefault(); // Prevent newline if textarea (though we use input)
+            saveCellEdit();
+        } else if (e.key === 'Escape') {
+            setEditingCell(null);
+            setEditingValue('');
+        }
+    };
+
     const startAddingRow = () => {
         const emptyRow: Record<string, any> = {};
         tableStructure.forEach(col => {
@@ -152,7 +243,6 @@ export const DatabaseBrowser: React.FC = () => {
     const saveNewRow = async () => {
         if (!selectedTable) return;
 
-        // Filter out empty/auto-increment fields
         const dataToInsert: Record<string, any> = {};
         Object.entries(newRowData).forEach(([key, value]) => {
             const col = tableStructure.find(c => c.name === key);
@@ -171,7 +261,6 @@ export const DatabaseBrowser: React.FC = () => {
         }
     };
 
-    // Delete handler
     const deleteRow = async (row: Record<string, any>) => {
         if (!selectedTable) return;
         if (!confirm('Are you sure you want to delete this row?')) return;
@@ -185,7 +274,6 @@ export const DatabaseBrowser: React.FC = () => {
         }
     };
 
-    // Import handler
     const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
@@ -225,36 +313,68 @@ export const DatabaseBrowser: React.FC = () => {
 
     return (
         <div className="flex h-screen bg-slate-100">
-            {/* Sidebar - Table List */}
+            {/* Sidebar - Database & Table Tree */}
             <div className="w-64 bg-white border-r border-slate-200 flex flex-col">
                 <div className="p-4 border-b border-slate-200 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <Database className="text-primary-600" size={20} />
                         <h1 className="font-bold text-slate-800">QueryPop</h1>
                     </div>
-                    <button onClick={loadTables} className="p-1 hover:bg-slate-100 rounded">
+                    <button onClick={fetchDatabases} className="p-1 hover:bg-slate-100 rounded">
                         <RefreshCw size={16} className="text-slate-500" />
                     </button>
                 </div>
 
                 <div className="p-3 border-b border-slate-100">
-                    <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Tables</h2>
+                    <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Databases</h2>
                 </div>
 
                 <div className="flex-1 overflow-y-auto">
-                    {tables.map(table => (
-                        <button
-                            key={table.name}
-                            onClick={() => handleTableSelect(table.name)}
-                            className={`w-full text-left px-4 py-2 flex items-center gap-2 hover:bg-slate-50 border-l-2 transition-colors ${selectedTable === table.name
-                                ? 'bg-primary-50 border-primary-500 text-primary-700'
-                                : 'border-transparent text-slate-700'
-                                }`}
-                        >
-                            <Table size={14} className="shrink-0" />
-                            <span className="truncate text-sm">{table.name}</span>
-                            <span className="ml-auto text-xs text-slate-400">{table.column_count}</span>
-                        </button>
+                    {databases.length === 0 && !loading && (
+                        <div className="p-4 text-sm text-slate-400 text-center">No databases found</div>
+                    )}
+                    {databases.map(db => (
+                        <div key={db}>
+                            <button
+                                onClick={() => handleDatabaseSelect(db)}
+                                className={`w-full text-left px-4 py-2 flex items-center gap-2 hover:bg-slate-50 transition-colors ${expandedDb === db ? 'font-semibold text-slate-900 bg-slate-50' : 'text-slate-700'
+                                    }`}
+                            >
+                                <Database size={14} className={expandedDb === db ? 'text-primary-600' : 'text-slate-400'} />
+                                <span className="truncate text-sm">{db}</span>
+                                {expandedDb === db ? (
+                                    <ChevronDown size={14} className="ml-auto text-slate-400" />
+                                ) : (
+                                    <ChevronRight size={14} className="ml-auto text-slate-400" />
+                                )}
+                            </button>
+
+                            {/* Tables list under active DB */}
+                            {expandedDb === db && (
+                                <div className="pl-4 border-l-2 border-slate-100 ml-4 mb-2">
+                                    {loading && tables.length === 0 ? (
+                                        <div className="px-4 py-2 text-xs text-slate-400 flex items-center gap-2">
+                                            <Loader2 size={12} className="animate-spin" /> Loading...
+                                        </div>
+                                    ) : tables.length === 0 ? (
+                                        <div className="px-4 py-2 text-xs text-slate-400">No tables found</div>
+                                    ) : (
+                                        tables.map(table => (
+                                            <button
+                                                key={table.name}
+                                                onClick={() => handleTableSelect(table.name)}
+                                                className={`w-full text-left px-3 py-1.5 flex items-center gap-2 hover:text-primary-700 transition-colors ${selectedTable === table.name ? 'text-primary-600 font-medium bg-primary-50 rounded' : 'text-slate-600'
+                                                    }`}
+                                            >
+                                                <Table size={13} className="shrink-0" />
+                                                <span className="truncate text-xs">{table.name}</span>
+                                                <span className="ml-auto text-[10px] text-slate-400">{table.column_count}</span>
+                                            </button>
+                                        ))
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     ))}
                 </div>
 
@@ -427,50 +547,45 @@ export const DatabaseBrowser: React.FC = () => {
                                         {/* Data Rows */}
                                         {tableData.rows.map((row, idx) => {
                                             const pkValue = getPrimaryKeyValue(row);
-                                            const isEditing = editingRowPk === pkValue;
 
                                             return (
-                                                <tr key={idx} className={`border-b border-slate-100 hover:bg-slate-50 ${isEditing ? 'bg-blue-50' : ''}`}>
+                                                <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
                                                     <td className="px-4 py-2">
                                                         <div className="flex gap-1">
-                                                            {isEditing ? (
-                                                                <>
-                                                                    <button onClick={saveEdit} className="p-1 text-green-600 hover:bg-green-100 rounded">
-                                                                        <Save size={14} />
-                                                                    </button>
-                                                                    <button onClick={cancelEditing} className="p-1 text-slate-500 hover:bg-slate-100 rounded">
-                                                                        <X size={14} />
-                                                                    </button>
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    <button onClick={() => startEditing(row)} className="p-1 text-blue-600 hover:bg-blue-100 rounded">
-                                                                        <Pencil size={14} />
-                                                                    </button>
-                                                                    <button onClick={() => deleteRow(row)} className="p-1 text-red-600 hover:bg-red-100 rounded">
-                                                                        <Trash2 size={14} />
-                                                                    </button>
-                                                                </>
-                                                            )}
+                                                            <button onClick={() => deleteRow(row)} className="p-1 text-red-600 hover:bg-red-100 rounded" title="Delete Row">
+                                                                <Trash2 size={14} />
+                                                            </button>
                                                         </div>
                                                     </td>
-                                                    {tableData.columns!.map(col => (
-                                                        <td key={col} className="px-4 py-2 text-slate-700 font-mono text-xs">
-                                                            {isEditing ? (
-                                                                <input
-                                                                    type="text"
-                                                                    value={editingData[col] ?? ''}
-                                                                    onChange={(e) => setEditingData({ ...editingData, [col]: e.target.value })}
-                                                                    disabled={primaryKeys.includes(col)}
-                                                                    className="w-full px-2 py-1 border border-blue-300 rounded text-sm disabled:bg-slate-100"
-                                                                />
-                                                            ) : (
-                                                                <span className="block truncate max-w-xs" title={String(row[col])}>
-                                                                    {row[col] === null ? <span className="text-slate-400 italic">NULL</span> : String(row[col])}
-                                                                </span>
-                                                            )}
-                                                        </td>
-                                                    ))}
+                                                    {tableData.columns!.map(col => {
+                                                        const isEditing = editingCell?.rowPk === pkValue && editingCell?.colName === col;
+                                                        const isPk = primaryKeys.includes(col);
+
+                                                        return (
+                                                            <td
+                                                                key={col}
+                                                                className={`px-4 py-2 text-slate-700 font-mono text-xs ${!isPk ? 'cursor-pointer hover:bg-blue-50' : ''}`}
+                                                                onClick={() => !isPk && !isEditing && handleCellClick(row, col)}
+                                                                title={!isPk ? "Click to edit" : "Primary Key (Cannot Edit)"}
+                                                            >
+                                                                {isEditing ? (
+                                                                    <input
+                                                                        type="text"
+                                                                        value={editingValue}
+                                                                        onChange={(e) => setEditingValue(e.target.value)}
+                                                                        onBlur={handleCellBlur}
+                                                                        onKeyDown={handleKeyDown}
+                                                                        autoFocus
+                                                                        className="w-full px-2 py-1 border border-blue-500 rounded text-sm outline-none shadow-sm"
+                                                                    />
+                                                                ) : (
+                                                                    <span className="block truncate max-w-xs">
+                                                                        {row[col] === null ? <span className="text-slate-400 italic">NULL</span> : String(row[col])}
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                        );
+                                                    })}
                                                 </tr>
                                             );
                                         })}

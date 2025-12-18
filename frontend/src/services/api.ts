@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { ConnectResponse, ExecuteResponse, GenerateResponse, QueryHistoryItem, TablesResponse, TableStructureResponse, TableDataResponse } from '../types';
+import type { ConnectResponse, ExecuteResponse, GenerateResponse, QueryHistoryItem, TablesResponse, TableStructureResponse, TableDataResponse, DatabasesResponse } from '../types';
 
 const API_BASE_URL = 'http://localhost:5000/api';
 
@@ -21,6 +21,24 @@ export const dbApi = {
             return response.data;
         } catch (error: any) {
             return error.response?.data || { success: false, message: 'Network error' };
+        }
+    },
+
+    getDatabases: async (): Promise<DatabasesResponse> => {
+        try {
+            const response = await api.get('/databases');
+            return response.data;
+        } catch (error: any) {
+            return { success: false, error: error.response?.data?.error || 'Failed to fetch databases' };
+        }
+    },
+
+    switchDatabase: async (dbName: string): Promise<ConnectResponse> => {
+        try {
+            const response = await api.post('/connect/database', { database: dbName });
+            return response.data;
+        } catch (error: any) {
+            return error.response?.data || { success: false, message: 'Failed to switch database' };
         }
     },
 

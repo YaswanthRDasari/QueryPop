@@ -10,6 +10,12 @@ export interface ConnectResponse {
     column_count?: number;
 }
 
+export interface DatabasesResponse {
+    success: boolean;
+    databases?: string[];
+    error?: string;
+}
+
 export interface GenerateResponse {
     sql: string;
     explanation: string;

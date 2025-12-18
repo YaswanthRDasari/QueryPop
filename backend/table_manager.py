@@ -11,6 +11,32 @@ class TableManager:
     def __init__(self, db_connector):
         self.db_connector = db_connector
 
+
+
+    def get_databases(self):
+        """Get list of all available databases."""
+        if not self.db_connector.engine:
+            return {"success": False, "error": "Not connected to database"}
+            
+        try:
+            databases = []
+            with self.db_connector.engine.connect() as conn:
+                if self.db_connector.db_type == "mysql":
+                    query = "SHOW DATABASES"
+                    result = conn.execute(text(query))
+                    # Filter out system databases
+                    system_dbs = {'information_schema', 'mysql', 'performance_schema', 'sys'}
+                    databases = [row[0] for row in result.fetchall() if row[0] not in system_dbs]
+                else: # postgresql
+                    query = "SELECT datname FROM pg_database WHERE datistemplate = false;"
+                    result = conn.execute(text(query))
+                    databases = [row[0] for row in result.fetchall()]
+            
+            return {"success": True, "databases": sorted(databases)}
+        except Exception as e:
+            logger.error(f"Failed to get databases: {e}")
+            return {"success": False, "error": str(e)}
+
     def get_tables(self):
         """Get list of all tables with basic info using optimized raw SQL."""
         if not self.db_connector.engine:
@@ -35,6 +61,7 @@ class TableManager:
                         AND t.TABLE_SCHEMA = c.TABLE_SCHEMA
                     WHERE t.TABLE_SCHEMA = DATABASE()
                         AND t.TABLE_TYPE = 'BASE TABLE'
+                        AND t.TABLE_SCHEMA NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')
                     GROUP BY t.TABLE_NAME, t.TABLE_ROWS
                     ORDER BY t.TABLE_NAME
                 """
@@ -58,8 +85,9 @@ class TableManager:
                         WHERE tc.constraint_type = 'PRIMARY KEY'
                             AND tc.table_schema = current_schema()
                     ) pk ON c.table_name = pk.table_name AND c.column_name = pk.column_name
-                    WHERE t.table_schema = current_schema()
+                    WHERE t.table_schema = current_schema()  -- Usually 'public'
                         AND t.table_type = 'BASE TABLE'
+                        AND t.table_schema NOT IN ('information_schema', 'pg_catalog') 
                     GROUP BY t.table_name
                     ORDER BY t.table_name
                 """

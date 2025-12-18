@@ -14,6 +14,27 @@ class DBConnector:
         # Try to auto-connect on initialization
         self.try_reconnect()
 
+    def switch_database(self, db_name):
+        """Switches the active connection to a different database."""
+        if not self.connection_string:
+             return False, "No active connection"
+        
+        try:
+            from sqlalchemy.engine.url import make_url
+            
+            # Parse current URL
+            url = make_url(self.connection_string)
+            
+            # Update database
+            new_url = url.set(database=db_name)
+            
+            # Connect with new URL (explicitly reveal password for connection string)
+            success, msg = self.connect(new_url.render_as_string(hide_password=False))
+            return success, msg
+        except Exception as e:
+            logger.error(f"Failed to switch database: {e}")
+            return False, str(e)
+
     def save_config(self, connection_string):
         """Saves the working connection string to a local file."""
         import json

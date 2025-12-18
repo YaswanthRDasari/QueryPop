@@ -70,6 +70,36 @@ def connect_db():
     else:
         return jsonify({"success": False, "message": message}), 400
 
+
+
+@app.route('/api/databases', methods=['GET'])
+@require_db_connection
+def get_databases():
+    """Get list of available databases."""
+    result = table_manager.get_databases()
+    if result["success"]:
+        return jsonify(result), 200
+    return jsonify(result), 400
+
+@app.route('/api/connect/database', methods=['POST'])
+@require_db_connection
+def switch_database():
+    """Switch active database."""
+    data = request.json
+    db_name = data.get('database')
+    
+    if not db_name:
+        return jsonify({"success": False, "error": "Database name required"}), 400
+        
+    success, message = db_connector.switch_database(db_name)
+    
+    if success:
+        # Re-introspect schema for new DB
+        schema_inspector.inspect_and_cache_schema(db_connector)
+        return jsonify({"success": True, "message": f"Switched to {db_name}"}), 200
+    else:
+        return jsonify({"success": False, "message": message}), 400
+
 # ============ Table Management Endpoints ============
 
 @app.route('/api/tables', methods=['GET'])

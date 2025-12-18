@@ -33,7 +33,24 @@ export const DatabaseBrowser: React.FC = () => {
     const [isImporting, setIsImporting] = useState(false);
     const [importResult, setImportResult] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const exportMenuRef = useRef<HTMLDivElement>(null);
     const hasFetchedDatabases = useRef(false);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (exportMenuRef.current && !exportMenuRef.current.contains(event.target as Node)) {
+                setShowExportMenu(false);
+            }
+        };
+
+        if (showExportMenu) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [showExportMenu]);
 
     useEffect(() => {
         if (hasFetchedDatabases.current) return;
@@ -404,7 +421,7 @@ export const DatabaseBrowser: React.FC = () => {
 
                     <div className="flex items-center gap-2">
                         {/* Export Dropdown */}
-                        <div className="relative">
+                        <div className="relative" ref={exportMenuRef}>
                             <button
                                 onClick={() => setShowExportMenu(!showExportMenu)}
                                 disabled={!selectedTable}
@@ -428,7 +445,7 @@ export const DatabaseBrowser: React.FC = () => {
                                         className="flex items-center gap-2 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                                         onClick={() => setShowExportMenu(false)}
                                     >
-                                        <FileCode size={14} />
+                                        <Upload size={14} />
                                         Export as SQL
                                     </a>
                                     <hr className="border-slate-200" />
@@ -458,7 +475,7 @@ export const DatabaseBrowser: React.FC = () => {
                                 disabled={isImporting}
                                 className="border border-slate-300 hover:bg-slate-50 px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50"
                             >
-                                {isImporting ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                                {isImporting ? <Loader2 size={16} className="animate-spin" /> : <FileCode size={16} />}
                                 Import SQL
                             </button>
                         </div>

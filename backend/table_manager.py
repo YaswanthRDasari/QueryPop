@@ -270,8 +270,8 @@ class TableManager:
             logger.error(f"Failed to get table structure: {e}")
             return {"success": False, "error": str(e)}
 
-    def get_table_data(self, table_name, page=1, per_page=50, order_by=None, order_dir='asc'):
-        """Get paginated table data."""
+    def get_table_data(self, table_name, page=1, per_page=50, order_by=None, order_dir='asc', filters=None):
+        """Get paginated table data with optional filtering."""
         if not self.db_connector.engine:
             return {"success": False, "error": "Not connected to database"}
 
@@ -280,24 +280,40 @@ class TableManager:
             
             # Build query - escape table name for safety
             # Note: In production, validate table_name against known tables
+            
+            where_clauses = []
+            params = {}
+            
+            if filters:
+                for col, val in filters.items():
+                    # Simple LIKE matching for now
+                    # We use named parameters to prevent SQL injection
+                    clean_col = col.replace("`", "") # Basic sanitization
+                    where_clauses.append(f"`{clean_col}` LIKE :filter_{clean_col}")
+                    params[f"filter_{clean_col}"] = f"%{val}%"
+            
+            where_stmt = ""
+            if where_clauses:
+                where_stmt = "WHERE " + " AND ".join(where_clauses)
+
             order_clause = ""
             if order_by:
                 direction = "DESC" if order_dir.lower() == 'desc' else "ASC"
                 order_clause = f" ORDER BY `{order_by}` {direction}"
             
             # Get total count
-            count_query = f"SELECT COUNT(*) as cnt FROM `{table_name}`"
+            count_query = f"SELECT COUNT(*) as cnt FROM `{table_name}` {where_stmt}"
             
             # Get data with pagination
-            data_query = f"SELECT * FROM `{table_name}`{order_clause} LIMIT {per_page} OFFSET {offset}"
+            data_query = f"SELECT * FROM `{table_name}` {where_stmt}{order_clause} LIMIT {per_page} OFFSET {offset}"
             
             with self.db_connector.engine.connect() as conn:
                 # Get count
-                count_result = conn.execute(text(count_query))
+                count_result = conn.execute(text(count_query), params)
                 total_count = count_result.fetchone()[0]
                 
                 # Get data
-                result = conn.execute(text(data_query))
+                result = conn.execute(text(data_query), params)
                 columns = list(result.keys())
                 rows = [dict(zip(columns, row)) for row in result.fetchall()]
                 

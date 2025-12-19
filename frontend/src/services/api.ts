@@ -102,12 +102,15 @@ export const tableApi = {
         page: number = 1,
         perPage: number = 50,
         orderBy?: string,
-        orderDir: 'asc' | 'desc' = 'asc'
+        orderDir: 'asc' | 'desc' = 'asc',
+        filters?: Record<string, string>
     ): Promise<TableDataResponse> => {
         try {
-            const response = await api.get(`/tables/${tableName}/data`, {
-                params: { page, per_page: perPage, order_by: orderBy, order_dir: orderDir }
-            });
+            const params: any = { page, per_page: perPage, order_by: orderBy, order_dir: orderDir };
+            if (filters) {
+                Object.assign(params, filters);
+            }
+            const response = await api.get(`/tables/${tableName}/data`, { params });
             return response.data;
         } catch (error: any) {
             return { success: false, error: error.response?.data?.error || 'Failed to fetch data' };

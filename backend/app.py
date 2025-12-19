@@ -123,13 +123,20 @@ def get_table_structure(table_name):
 @app.route('/api/tables/<table_name>/data', methods=['GET'])
 @require_db_connection
 def get_table_data(table_name):
-    """Get paginated data from a table."""
+    """Get paginated data from a table with optional filtering."""
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 50, type=int)
     order_by = request.args.get('order_by', None)
     order_dir = request.args.get('order_dir', 'asc')
     
-    result = table_manager.get_table_data(table_name, page, per_page, order_by, order_dir)
+    # Extract filters from other query parameters
+    filters = {}
+    reserved_params = {'page', 'per_page', 'order_by', 'order_dir', 't'} # 't' is often used for cache busting
+    for key, value in request.args.items():
+        if key not in reserved_params and value:
+            filters[key] = value
+            
+    result = table_manager.get_table_data(table_name, page, per_page, order_by, order_dir, filters)
     if result["success"]:
         return jsonify(result), 200
     return jsonify(result), 400

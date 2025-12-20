@@ -33,13 +33,11 @@ def require_db_connection(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not db_connector.is_connected():
-            # Try to auto-reconnect
-            if not db_connector.try_reconnect():
-                return jsonify({
-                    "success": False, 
-                    "error": "Database not connected. Please connect first.",
-                    "code": "DB_NOT_CONNECTED"
-                }), 401
+            return jsonify({
+                "success": False, 
+                "error": "Database not connected. Please connect first.",
+                "code": "DB_NOT_CONNECTED"
+            }), 401
         return f(*args, **kwargs)
     return decorated_function
 

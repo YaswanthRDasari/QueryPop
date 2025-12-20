@@ -337,8 +337,8 @@ export const DatabaseBrowser: React.FC = () => {
                                 { id: 'sql', label: 'SQL', icon: <FileCode size={16} /> },
                                 { id: 'search', label: 'Search', icon: <Search size={16} /> },
                                 { id: 'query', label: 'AI Query', icon: <Play size={16} /> }, // Using Play as sparkle isn't default in lucide v1 maybe
-                                { id: 'export', label: 'Export', icon: <Download size={16} /> },
-                                { id: 'import', label: 'Import', icon: <Upload size={16} /> },
+                                { id: 'export', label: 'Export', icon: <Upload size={16} /> },
+                                { id: 'import', label: 'Import', icon: <Download size={16} /> },
                             ].map(tab => (
                                 <button
                                     key={tab.id}

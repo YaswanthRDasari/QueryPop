@@ -10,9 +10,12 @@ from logger import setup_logger
 
 logger = setup_logger(__name__)
 
+import os
+
 app = Flask(__name__)
-# Allow CORS for all domains for MVP
-CORS(app) 
+# Allow CORS for all domains for MVP, unless running under FastAPI (which handles CORS)
+if not os.environ.get("FASTAPI_MODE"):
+    CORS(app) 
 
 # Initialize components
 # Single user session, so we can keep single instances? 

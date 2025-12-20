@@ -92,11 +92,15 @@ export const DatabaseBrowser: React.FC = () => {
             return;
         }
 
+        // Eagerly update UI state
         setLoading(true);
         setError(null);
+        setExpandedDb(dbName);
+        setTables([]); // Clear previous tables immediatey to show loader
+
         const connectResult = await dbApi.switchDatabase(dbName);
         if (connectResult.success) {
-            setExpandedDb(dbName);
+            // Database switched, now fetch tables
             const result = await tableApi.getTables();
             if (result.success && result.tables) {
                 setTables(result.tables);
@@ -106,6 +110,8 @@ export const DatabaseBrowser: React.FC = () => {
                 setError(result.error || 'Failed to load tables');
             }
         } else {
+            // Revert expansion if connection failed
+            setExpandedDb(null);
             setError(connectResult.message || 'Failed to switch database');
         }
         setLoading(false);
@@ -272,18 +278,27 @@ export const DatabaseBrowser: React.FC = () => {
                             </button>
                             {expandedDb === db && (
                                 <div className="ml-5 mt-1 border-l-2 border-slate-100 pl-2 space-y-0.5">
-                                    {tables.map(table => (
-                                        <button
-                                            key={table.name}
-                                            onClick={() => setSelectedTable(table.name)}
-                                            className={`w-full text-left px-3 py-1.5 flex items-center gap-2 rounded text-xs transition-colors ${selectedTable === table.name ? 'text-primary-700 bg-primary-50 font-medium' : 'text-slate-500 hover:text-primary-600'}`}
-                                        >
-                                            <Table size={13} />
-                                            <span className="truncate">{table.name}</span>
-                                        </button>
-                                    ))}
-                                    {tables.length === 0 && !loading && (
-                                        <div className="px-3 py-1 text-xs text-slate-400">No tables</div>
+                                    {loading && tables.length === 0 ? (
+                                        <div className="px-3 py-2 text-xs text-slate-400 flex items-center gap-2 animate-pulse">
+                                            <Loader2 size={12} className="animate-spin" />
+                                            <span>Loading tables...</span>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            {tables.map(table => (
+                                                <button
+                                                    key={table.name}
+                                                    onClick={() => setSelectedTable(table.name)}
+                                                    className={`w-full text-left px-3 py-1.5 flex items-center gap-2 rounded text-xs transition-colors ${selectedTable === table.name ? 'text-primary-700 bg-primary-50 font-medium' : 'text-slate-500 hover:text-primary-600'}`}
+                                                >
+                                                    <Table size={13} />
+                                                    <span className="truncate">{table.name}</span>
+                                                </button>
+                                            ))}
+                                            {tables.length === 0 && !loading && (
+                                                <div className="px-3 py-1 text-xs text-slate-400">No tables</div>
+                                            )}
+                                        </>
                                     )}
                                 </div>
                             )}
@@ -460,12 +475,72 @@ export const DatabaseBrowser: React.FC = () => {
                                             </div>
                                             {/* Pagination */}
                                             <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
-                                                <span className="text-sm text-slate-500">
-                                                    Page {tableData?.pagination?.page} of {tableData?.pagination?.total_pages}
-                                                </span>
-                                                <div className="flex gap-2">
-                                                    <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="p-1 border rounded hover:bg-white disabled:opacity-50"><ChevronLeft size={16} /></button>
-                                                    <button onClick={() => setPage(p => Math.min(tableData?.pagination?.total_pages || 1, p + 1))} disabled={page === (tableData?.pagination?.total_pages || 1)} className="p-1 border rounded hover:bg-white disabled:opacity-50"><ChevronRight size={16} /></button>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm text-slate-500 mr-2">
+                                                        Page {tableData?.pagination?.page} of {tableData?.pagination?.total_pages}
+                                                    </span>
+                                                </div>
+
+                                                <div className="flex items-center gap-1">
+                                                    <button
+                                                        onClick={() => setPage(1)}
+                                                        disabled={page === 1}
+                                                        className="p-1 border rounded hover:bg-white disabled:opacity-50 text-slate-500"
+                                                        title="First Page"
+                                                    >
+                                                        <span style={{ fontSize: '10px' }}>&laquo;</span>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setPage(p => Math.max(1, p - 1))}
+                                                        disabled={page === 1}
+                                                        className="p-1 border rounded hover:bg-white disabled:opacity-50 text-slate-500"
+                                                        title="Previous Page"
+                                                    >
+                                                        <ChevronLeft size={16} />
+                                                    </button>
+
+                                                    {/* Numbered Buttons */}
+                                                    <div className="flex items-center gap-1 mx-2">
+                                                        {Array.from({ length: Math.min(5, tableData?.pagination?.total_pages || 1) }, (_, i) => {
+                                                            const totalPages = tableData?.pagination?.total_pages || 1;
+                                                            let p = i + 1;
+                                                            if (totalPages > 5) {
+                                                                if (page <= 3) { p = i + 1; }
+                                                                else if (page >= totalPages - 2) { p = totalPages - 4 + i; }
+                                                                else { p = page - 2 + i; }
+                                                            }
+                                                            return (
+                                                                <button
+                                                                    key={p}
+                                                                    onClick={() => setPage(p)}
+                                                                    disabled={p === page}
+                                                                    className={`w-8 h-8 flex items-center justify-center rounded border text-sm transition-colors ${p === page
+                                                                        ? 'bg-primary-600 text-white border-primary-600 font-medium'
+                                                                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+                                                                        }`}
+                                                                >
+                                                                    {p}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+
+                                                    <button
+                                                        onClick={() => setPage(p => Math.min(tableData?.pagination?.total_pages || 1, p + 1))}
+                                                        disabled={page === (tableData?.pagination?.total_pages || 1)}
+                                                        className="p-1 border rounded hover:bg-white disabled:opacity-50 text-slate-500"
+                                                        title="Next Page"
+                                                    >
+                                                        <ChevronRight size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setPage(tableData?.pagination?.total_pages || 1)}
+                                                        disabled={page === (tableData?.pagination?.total_pages || 1)}
+                                                        className="p-1 border rounded hover:bg-white disabled:opacity-50 text-slate-500"
+                                                        title="Last Page"
+                                                    >
+                                                        <span style={{ fontSize: '10px' }}>&raquo;</span>
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>

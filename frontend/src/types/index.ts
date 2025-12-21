@@ -3,11 +3,20 @@ export interface SchemaStats {
     column_count: number;
 }
 
+export interface ConnectionInfo {
+    type: string;
+    host: string;
+    port: number;
+    user: string;
+    database: string;
+}
+
 export interface ConnectResponse {
     success: boolean;
     message: string;
     table_count?: number;
     column_count?: number;
+    info?: ConnectionInfo;
 }
 
 export interface DatabasesResponse {
@@ -98,8 +107,10 @@ export interface PaginationInfo {
 export interface TableDataResponse {
     success: boolean;
     table_name?: string;
+    sql_query?: string;
     columns?: string[];
     rows?: Record<string, any>[];
+    execution_time?: number;
     pagination?: PaginationInfo;
     error?: string;
 }

@@ -10,6 +10,22 @@ const api = axios.create({
     },
 });
 
+// Add response interceptor to handle 401 errors globally
+api.interceptors.response.use(
+    (response) => {
+        return response;
+    },
+    (error) => {
+        if (error.response && error.response.status === 401) {
+            // Check if we are already on the connect page to avoid loops
+            if (!window.location.pathname.includes('/connect')) {
+                window.location.href = '/connect';
+            }
+        }
+        return Promise.reject(error);
+    }
+);
+
 export const dbApi = {
     checkHealth: async () => {
         return api.get('/health');
@@ -21,6 +37,15 @@ export const dbApi = {
             return response.data;
         } catch (error: any) {
             return error.response?.data || { success: false, message: 'Network error' };
+        }
+    },
+
+    getConnectionInfo: async (): Promise<{ success: boolean; info?: any; error?: string }> => {
+        try {
+            const response = await api.get('/connection-info');
+            return response.data;
+        } catch (error: any) {
+            return { success: false, error: error.response?.data?.error || 'Failed to fetch connection info' };
         }
     },
 

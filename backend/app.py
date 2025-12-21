@@ -33,13 +33,11 @@ def require_db_connection(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not db_connector.is_connected():
-            # Try to auto-reconnect
-            if not db_connector.try_reconnect():
-                return jsonify({
-                    "success": False, 
-                    "error": "Database not connected. Please connect first.",
-                    "code": "DB_NOT_CONNECTED"
-                }), 401
+            return jsonify({
+                "success": False, 
+                "error": "Database not connected. Please connect first.",
+                "code": "DB_NOT_CONNECTED"
+            }), 401
         return f(*args, **kwargs)
     return decorated_function
 
@@ -74,6 +72,15 @@ def connect_db():
         return jsonify({"success": False, "message": message}), 400
 
 
+
+@app.route('/api/connection-info', methods=['GET'])
+@require_db_connection
+def get_connection_info():
+    """Get details about current connection."""
+    info = db_connector.get_connection_details()
+    if info:
+        return jsonify({"success": True, "info": info}), 200
+    return jsonify({"success": False, "error": "Failed to get connection info"}), 400
 
 @app.route('/api/databases', methods=['GET'])
 @require_db_connection

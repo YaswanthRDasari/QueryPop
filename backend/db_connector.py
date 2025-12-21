@@ -9,10 +9,6 @@ class DBConnector:
         self.engine = None
         self.connection_string = None
         self.db_type = None # 'mysql' or 'postgresql'
-        self.config_file = "db_config.json"
-        
-        # Try to auto-connect on initialization
-        self.try_reconnect()
 
     def switch_database(self, db_name):
         """Switches the active connection to a different database."""
@@ -35,43 +31,7 @@ class DBConnector:
             logger.error(f"Failed to switch database: {e}")
             return False, str(e)
 
-    def save_config(self, connection_string):
-        """Saves the working connection string to a local file."""
-        import json
-        import os
-        try:
-            with open(self.config_file, 'w') as f:
-                json.dump({"connection_string": connection_string}, f)
-        except Exception as e:
-            logger.error(f"Failed to save db config: {str(e)}")
 
-    def load_config(self):
-        """Loads the connection string from the local file."""
-        import json
-        import os
-        if not os.path.exists(self.config_file):
-            return None
-        
-        try:
-            with open(self.config_file, 'r') as f:
-                data = json.load(f)
-                return data.get("connection_string")
-        except Exception as e:
-            logger.error(f"Failed to load db config: {str(e)}")
-            return None
-
-    def try_reconnect(self):
-        """Attempts to reconnect using the saved configuration."""
-        saved_conn_str = self.load_config()
-        if saved_conn_str:
-            logger.info("Found saved DB config. Attempting auto-reconnect...")
-            success, msg = self.connect(saved_conn_str)
-            if success:
-                logger.info("Auto-reconnection successful.")
-            else:
-                logger.warning(f"Auto-reconnection failed: {msg}")
-            return success
-        return False
 
     def is_connected(self):
         """Checks if there is an active engine."""
@@ -111,6 +71,16 @@ class DBConnector:
             else:
                 return False, "Unsupported database type. Use mysql:// or postgresql://"
 
+            # DEBUG: Print the processed connection string (careful with secrets)
+            safe_conn_string = processed_conn_string
+            if "@" in safe_conn_string:
+                part1, part2 = safe_conn_string.rsplit("@", 1)
+                if ":" in part1:
+                    # mask password
+                    scheme_user, _ = part1.rsplit(":", 1)
+                    safe_conn_string = f"{scheme_user}:***@{part2}"
+            logger.info(f"DEBUG: Connecting with: {safe_conn_string}")
+
             # Create engine. echo=False to avoid spamming logs with SQL
             # pool_pre_ping=True helps detect stale connections
             engine = create_engine(processed_conn_string, echo=False, pool_pre_ping=True)
@@ -124,20 +94,42 @@ class DBConnector:
             self.connection_string = connection_string
             self.db_type = db_type
             
-            # Persist successful connection string
-            self.save_config(connection_string)
-            
             logger.info(f"Successfully connected to {self.db_type} DB")
             return True, "Connected successfully"
 
         except SQLAlchemyError as e:
             error_msg = str(e)
             logger.error(f"Connection failed: {error_msg}")
+            
+            # Check for common MySQL connection errors
+            if "2003" in error_msg and "timed out" in error_msg:
+                return False, (
+                    "Connection timed out. This is usually due to network or firewall settings.\n"
+                    "1. Check AWS RDS Security Group to allow inbound traffic from your IP.\n"
+                    "2. Ensure the RDS instance is 'Publicly Accessible' if connecting from outside VPC."
+                )
+            
             return False, f"Connection failed: {error_msg}"
         except Exception as e:
             logger.exception("Detailed Connection Error Traceback:") # This prints the full stack trace
             error_msg = str(e)
-            return False, f"Unexpected error: {error_msg}"
+    def get_connection_details(self):
+        """Returns safe connection details (host, user, db, type)."""
+        if not self.connection_string:
+            return None
+        try:
+            from sqlalchemy.engine.url import make_url
+            url = make_url(self.connection_string)
+            return {
+                "type": self.db_type,
+                "host": url.host,
+                "port": url.port,
+                "user": url.username,
+                "database": url.database
+            }
+        except Exception as e:
+            logger.error(f"Failed to parse connection string: {e}")
+            return None
 
     def get_inspector(self):
         if not self.engine:

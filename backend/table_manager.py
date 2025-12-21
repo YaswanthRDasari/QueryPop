@@ -2,6 +2,7 @@
 Table Manager - CRUD operations for table data
 """
 from sqlalchemy import text, inspect
+import time
 from logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -307,6 +308,7 @@ class TableManager:
             # Get data with pagination
             data_query = f"SELECT * FROM `{table_name}` {where_stmt}{order_clause} LIMIT {per_page} OFFSET {offset}"
             
+            start_time = time.time()
             with self.db_connector.engine.connect() as conn:
                 # Get count
                 count_result = conn.execute(text(count_query), params)
@@ -319,11 +321,16 @@ class TableManager:
                 
                 total_pages = (total_count + per_page - 1) // per_page
                 
+                end_time = time.time()
+                execution_time = (end_time - start_time)
+                
                 return {
                     "success": True,
                     "table_name": table_name,
                     "columns": columns,
                     "rows": rows,
+                    "sql_query": data_query,
+                    "execution_time": execution_time,
                     "pagination": {
                         "page": page,
                         "per_page": per_page,

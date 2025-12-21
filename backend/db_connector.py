@@ -100,11 +100,36 @@ class DBConnector:
         except SQLAlchemyError as e:
             error_msg = str(e)
             logger.error(f"Connection failed: {error_msg}")
+            
+            # Check for common MySQL connection errors
+            if "2003" in error_msg and "timed out" in error_msg:
+                return False, (
+                    "Connection timed out. This is usually due to network or firewall settings.\n"
+                    "1. Check AWS RDS Security Group to allow inbound traffic from your IP.\n"
+                    "2. Ensure the RDS instance is 'Publicly Accessible' if connecting from outside VPC."
+                )
+            
             return False, f"Connection failed: {error_msg}"
         except Exception as e:
             logger.exception("Detailed Connection Error Traceback:") # This prints the full stack trace
             error_msg = str(e)
-            return False, f"Unexpected error: {error_msg}"
+    def get_connection_details(self):
+        """Returns safe connection details (host, user, db, type)."""
+        if not self.connection_string:
+            return None
+        try:
+            from sqlalchemy.engine.url import make_url
+            url = make_url(self.connection_string)
+            return {
+                "type": self.db_type,
+                "host": url.host,
+                "port": url.port,
+                "user": url.username,
+                "database": url.database
+            }
+        except Exception as e:
+            logger.error(f"Failed to parse connection string: {e}")
+            return None
 
     def get_inspector(self):
         if not self.engine:

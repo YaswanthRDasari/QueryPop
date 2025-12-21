@@ -73,6 +73,15 @@ def connect_db():
 
 
 
+@app.route('/api/connection-info', methods=['GET'])
+@require_db_connection
+def get_connection_info():
+    """Get details about current connection."""
+    info = db_connector.get_connection_details()
+    if info:
+        return jsonify({"success": True, "info": info}), 200
+    return jsonify({"success": False, "error": "Failed to get connection info"}), 400
+
 @app.route('/api/databases', methods=['GET'])
 @require_db_connection
 def get_databases():

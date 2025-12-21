@@ -40,6 +40,15 @@ export const dbApi = {
         }
     },
 
+    getConnectionInfo: async (): Promise<{ success: boolean; info?: any; error?: string }> => {
+        try {
+            const response = await api.get('/connection-info');
+            return response.data;
+        } catch (error: any) {
+            return { success: false, error: error.response?.data?.error || 'Failed to fetch connection info' };
+        }
+    },
+
     getDatabases: async (): Promise<DatabasesResponse> => {
         try {
             const response = await api.get('/databases');

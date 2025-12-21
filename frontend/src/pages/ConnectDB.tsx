@@ -90,7 +90,7 @@ export const ConnectDB: React.FC = () => {
 
                 <div className="mt-8 pt-6 border-t border-slate-100 text-center">
                     <p className="text-xs text-slate-400">
-                        QueryPop Phase 0.1 • Local MVP
+                        QueryPop Phase 0.3 • Local MVP
                     </p>
                 </div>
             </div>

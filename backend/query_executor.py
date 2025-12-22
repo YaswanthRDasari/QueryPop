@@ -1,5 +1,7 @@
+import re
 import time
 import sqlite3
+from sqlalchemy import inspect
 from config import Config
 from logger import setup_logger
 from safety_validator import SafetyValidator
@@ -64,12 +66,45 @@ class QueryExecutor:
             if result.get("success"):
                 status = "success"
                 row_count = result.get("row_count", 0)
+                
+                # Try to detect table and PK for editing
+                affected_table = None
+                primary_keys = []
+                
+                try:
+                    # Simple regex to find single table SELECT
+                    # Matches: SELECT ... FROM `table` ... or FROM table ...
+                    # Ignores queries with JOIN, comma-separated tables (implicit join)
+                    # This is conservative to avoid enabling editing on ambiguous results
+                    
+                    # Normalize spaces
+                    clean_sql = ' '.join(sql_query.split())
+                    
+                    # Check for explicit JOIN or comma joins
+                    if " JOIN " in clean_sql.upper() or "," in clean_sql.upper().split(" FROM ")[-1]:
+                        pass # Complex query, skip editing
+                    else:
+                        match = re.search(r'(?i)FROM\s+[`"]?([a-zA-Z0-9_]+)[`"]?', clean_sql)
+                        if match:
+                            table_name = match.group(1)
+                            # Verify table exists and get PKs
+                            inspector = self.db_connector.get_inspector()
+                            if inspector.has_table(table_name):
+                                affected_table = table_name
+                                pk_constraint = inspector.get_pk_constraint(table_name)
+                                if pk_constraint and pk_constraint.get("constrained_columns"):
+                                    primary_keys = pk_constraint["constrained_columns"]
+                except Exception as e:
+                    logger.warning(f"Failed to detect table metadata: {e}")
+
                 return {
                     "success": True, 
                     "rows": result["rows"], 
                     "columns": result["columns"],
                     "execution_time_ms": execution_time_ms,
-                    "row_count": row_count
+                    "row_count": row_count,
+                    "affected_table": affected_table,
+                    "primary_keys": primary_keys
                 }
             else:
                 error_msg = result.get("error")

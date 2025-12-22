@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import type { ExecuteResponse } from '../types';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface ResultsTableProps {
     result: ExecuteResponse | null;
@@ -56,33 +57,64 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({ result, tableName, p
         setEditingValue('');
     };
 
+    // Pagination State
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(20);
+
+    // Reset pagination when result changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [result]);
+
+    // Calculate displayed rows
+    const totalRows = result.rows.length;
+    const totalPages = Math.ceil(totalRows / itemsPerPage);
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const currentRows = result.rows.slice(startIndex, endIndex);
+
     return (
-        <div className="mt-4 rounded-lg border border-slate-200 overflow-hidden shadow-sm bg-white">
+        <div className="mt-4 rounded-lg border border-slate-200 overflow-hidden shadow-sm bg-white flex flex-col">
             <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex justify-between items-center">
-                <span className="text-sm text-slate-600 font-medium">
-                    {result.row_count} rows in {result.execution_time_ms?.toFixed(0)}ms
-                </span>
+                <div className="bg-green-50 border border-green-200 text-green-800 px-3 py-2 rounded text-xs flex items-center gap-2">
+                    <span className="font-bold">✓</span>
+                    <span>
+                        Showing rows {startIndex + 1}-{Math.min(endIndex, totalRows)} ({totalRows} total, Query took {result.execution_time_ms ? (result.execution_time_ms / 1000).toFixed(4) : '0.00'} seconds.)
+                    </span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">Rows per page:</span>
+                    <select
+                        value={itemsPerPage}
+                        onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                        className="text-xs border border-slate-300 rounded px-1 py-0.5 bg-white focus:outline-none focus:border-primary-500"
+                    >
+                        {[20, 25, 50, 100, 200, 500].map(size => (
+                            <option key={size} value={size}>{size}</option>
+                        ))}
+                    </select>
+                </div>
             </div>
-            <div className="overflow-x-auto custom-scrollbar">
+            <div className="overflow-x-auto custom-scrollbar flex-1">
                 <table className="w-full text-sm text-left">
-                    <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-10">
+                    <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-10 shadow-sm">
                         <tr>
                             {columns.map((col) => (
-                                <th key={col} className="px-6 py-3 font-medium whitespace-nowrap border-b border-slate-100">
+                                <th key={col} className="px-6 py-3 font-medium whitespace-nowrap border-b border-slate-100 bg-slate-50">
                                     {col}
                                 </th>
                             ))}
                         </tr>
                     </thead>
                     <tbody>
-                        {result.rows.map((row, i) => {
+                        {currentRows.map((row, i) => {
                             // Try to find a unique ID for the key if primaryKey is not available, fallback to index
-                            const rowKey = primaryKey && row[primaryKey] ? row[primaryKey] : i;
+                            const rowKey = primaryKey && row[primaryKey] ? row[primaryKey] : startIndex + i;
 
                             return (
-                                <tr key={rowKey} className="hover:bg-slate-50 border-b border-slate-100 last:border-0">
+                                <tr key={rowKey} className="hover:bg-slate-50 border-b border-slate-100 last:border-0 transition-colors">
                                     {columns.map((col) => {
-                                        const isEditing = editingCell?.rowId === row[primaryKey] && editingCell?.field === col;
+                                        const isEditing = primaryKey && editingCell?.rowId === row[primaryKey] && editingCell?.field === col;
                                         const val = row[col];
 
                                         return (
@@ -140,6 +172,78 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({ result, tableName, p
                     </tbody>
                 </table>
             </div>
+
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+                <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm text-slate-500 mr-2">
+                            Page {currentPage} of {totalPages}
+                        </span>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                        <button
+                            onClick={() => setCurrentPage(1)}
+                            disabled={currentPage === 1}
+                            className="p-1 border rounded hover:bg-white disabled:opacity-50 text-slate-500"
+                            title="First Page"
+                        >
+                            <span style={{ fontSize: '10px' }}>&laquo;</span>
+                        </button>
+                        <button
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                            className="p-1 border rounded hover:bg-white disabled:opacity-50 text-slate-500"
+                            title="Previous Page"
+                        >
+                            <ChevronLeft size={16} />
+                        </button>
+
+                        <div className="flex items-center gap-1 mx-2">
+                            {/* Simple sliding window pagination logic */}
+                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                let p = i + 1;
+                                if (totalPages > 5) {
+                                    if (currentPage <= 3) { p = i + 1; }
+                                    else if (currentPage >= totalPages - 2) { p = totalPages - 4 + i; }
+                                    else { p = currentPage - 2 + i; }
+                                }
+                                return (
+                                    <button
+                                        key={p}
+                                        onClick={() => setCurrentPage(p)}
+                                        disabled={p === currentPage}
+                                        className={`w-8 h-8 flex items-center justify-center rounded border text-sm transition-colors ${p === currentPage
+                                            ? 'bg-primary-600 text-white border-primary-600 font-medium'
+                                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+                                            }`}
+                                    >
+                                        {p}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        <button
+                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                            disabled={currentPage === totalPages}
+                            className="p-1 border rounded hover:bg-white disabled:opacity-50 text-slate-500"
+                            title="Next Page"
+                        >
+                            <ChevronRight size={16} />
+                        </button>
+                        <button
+                            onClick={() => setCurrentPage(totalPages)}
+                            disabled={currentPage === totalPages}
+                            className="p-1 border rounded hover:bg-white disabled:opacity-50 text-slate-500"
+                            title="Last Page"
+                        >
+                            <span style={{ fontSize: '10px' }}>&raquo;</span>
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

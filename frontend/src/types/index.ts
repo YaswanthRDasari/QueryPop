@@ -39,6 +39,8 @@ export interface ExecuteResponse {
     columns?: string[];
     execution_time_ms?: number;
     row_count?: number;
+    affected_table?: string;
+    primary_keys?: string[];
     error?: string;
 }
 

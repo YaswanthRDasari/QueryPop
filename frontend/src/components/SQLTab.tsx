@@ -9,39 +9,43 @@ interface SQLTabProps {
 }
 
 export const SQLTab: React.FC<SQLTabProps> = ({ tableName, initialSql }) => {
-    const defaultSql = initialSql || (tableName ? `SELECT * FROM \`\${tableName}\` LIMIT 50` : 'SHOW TABLES');
+    const defaultSql = initialSql || (tableName ? `SELECT * FROM \`${tableName}\` LIMIT 50` : 'SHOW TABLES');
     const [sql, setSql] = useState(defaultSql);
     const [result, setResult] = useState<any>(null);
     const [loading, setLoading] = useState(false);
+
+    // State for the table currently being displayed/edited
+    const [activeTable, setActiveTable] = useState<string | undefined>(tableName);
     const [primaryKey, setPrimaryKey] = useState<string | undefined>(undefined);
     const [validColumns, setValidColumns] = useState<Set<string>>(new Set());
 
-    // Fetch primary key when tableName changes
-    React.useEffect(() => {
-        const fetchStructure = async () => {
-            if (!tableName) {
-                setPrimaryKey(undefined);
-                setValidColumns(new Set());
-                return;
-            }
-            try {
-                const structure = await tableApi.getTableStructure(tableName);
-                if (structure.success) {
-                    if (structure.primary_keys && structure.primary_keys.length > 0) {
-                        setPrimaryKey(structure.primary_keys[0]);
-                    } else {
-                        setPrimaryKey(undefined);
-                    }
-
-                    if (structure.columns) {
-                        setValidColumns(new Set(structure.columns.map(c => c.name)));
-                    }
+    const fetchStructure = async (targetTable: string) => {
+        try {
+            const structure = await tableApi.getTableStructure(targetTable);
+            if (structure.success) {
+                // Only update PK if not already set (e.g. from query result)
+                // Actually query result PK is authoritative for the specific query, but structure is good fallback
+                if (!primaryKey && structure.primary_keys && structure.primary_keys.length > 0) {
+                    setPrimaryKey(structure.primary_keys[0]);
                 }
-            } catch (err) {
-                console.error('Failed to fetch table structure', err);
+
+                if (structure.columns) {
+                    setValidColumns(new Set(structure.columns.map(c => c.name)));
+                }
             }
-        };
-        fetchStructure();
+        } catch (err) {
+            console.error('Failed to fetch table structure', err);
+        }
+    };
+
+    // Reset when prop changes
+    React.useEffect(() => {
+        setActiveTable(tableName);
+        setPrimaryKey(undefined);
+        setValidColumns(new Set());
+        if (tableName) {
+            fetchStructure(tableName);
+        }
     }, [tableName]);
 
     const handleExecute = async () => {
@@ -51,6 +55,22 @@ export const SQLTab: React.FC<SQLTabProps> = ({ tableName, initialSql }) => {
         try {
             const res = await dbApi.executeQuery(sql);
             setResult(res);
+
+            if (res.success) {
+                if (res.affected_table) {
+                    setActiveTable(res.affected_table);
+                    if (res.primary_keys && res.primary_keys.length > 0) {
+                        setPrimaryKey(res.primary_keys[0]);
+                    }
+                    // Fetch structure to populate validColumns for editing safety
+                    fetchStructure(res.affected_table);
+                } else {
+                    // If no table detected, disable editing safety
+                    setActiveTable(undefined);
+                    setPrimaryKey(undefined);
+                    setValidColumns(new Set());
+                }
+            }
         } catch (err) {
             setResult({ success: false, error: 'Execution failed' });
         } finally {
@@ -59,18 +79,18 @@ export const SQLTab: React.FC<SQLTabProps> = ({ tableName, initialSql }) => {
     };
 
     const handleCellUpdate = async (rowId: string | number, field: string, value: string) => {
-        if (!tableName || !primaryKey) return;
+        if (!activeTable || !primaryKey) return;
 
         // Prevent editing if column is not in the actual table (e.g. alias or joined field)
         if (!validColumns.has(field)) {
-            alert(`Cannot edit column '${field}': It does not exist in table '${tableName}'. It might be an alias or from a joined table.`);
+            alert(`Cannot edit column '${field}': It does not exist in table '${activeTable}'. It might be an alias or from a joined table.`);
             return;
         }
 
         try {
             // updateRow expects data object
             const data = { [field]: value };
-            const res = await tableApi.updateRow(tableName, rowId, primaryKey, data);
+            const res = await tableApi.updateRow(activeTable, rowId, primaryKey, data);
 
             if (res.success) {
                 // Update local result state to reflect change
@@ -121,7 +141,7 @@ export const SQLTab: React.FC<SQLTabProps> = ({ tableName, initialSql }) => {
                     <h3 className="font-semibold text-slate-800 mb-3">Results</h3>
                     <ResultsTable
                         result={result}
-                        tableName={tableName}
+                        tableName={activeTable}
                         primaryKey={primaryKey}
                         onCellUpdate={handleCellUpdate}
                     />

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Database, Table, Columns, RefreshCw, ChevronLeft, ChevronRight, Plus, Trash2, Save, X, Loader2, ChevronDown, Search, Play, FileCode, Upload, Layout, Download, Pencil, Server } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { message } from 'antd';
 import { dbApi, tableApi } from '../services/api';
 import type { TableInfo, TableDataResponse, ColumnInfo, ConnectionInfo } from '../types';
 
@@ -237,41 +238,17 @@ export const DatabaseBrowser: React.FC = () => {
                 return;
             }
 
-            // Show confirmation dialog matching Row Edit style
-            const result = await Swal.fire({
-                title: 'Confirm Update',
-                html: `Update <b>${editingCell.colName}</b>?<br />From: <code>${strOriginal}</code><br />To: <b>${strNew}</b>`,
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonColor: '#3085d6',
-                cancelButtonColor: '#d33',
-                confirmButtonText: 'Yes, update it!'
-            });
+            // Perform update directly without confirmation
+            const data = { [editingCell.colName]: editingValue };
+            const apiResult = await tableApi.updateRow(selectedTable, editingCell.rowPk, getPrimaryKeyColumn(), data);
 
-            if (result.isConfirmed) {
-                const data = { [editingCell.colName]: editingValue };
-                const apiResult = await tableApi.updateRow(selectedTable, editingCell.rowPk, getPrimaryKeyColumn(), data);
-
-                if (apiResult.success) {
-                    await loadTableData(selectedTable, page, filters);
-                    setEditingCell(null);
-                    setEditingValue('');
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Updated!',
-                        text: 'Cell value has been updated.',
-                        timer: 1500,
-                        showConfirmButton: false
-                    });
-                } else {
-                    setError(apiResult.error || 'Update failed');
-                }
-            } else {
-                // If cancelled, keep editing mode or cancel?
-                // Usually user expects "Cancel" -> "Don't save, but stay in edit or revert?"
-                // Let's revert to view mode to be safe/clear
+            if (apiResult.success) {
+                await loadTableData(selectedTable, page, filters);
                 setEditingCell(null);
                 setEditingValue('');
+                message.success('Cell value has been updated.');
+            } else {
+                setError(apiResult.error || 'Update failed');
             }
         } catch (err) {
             console.error('Failed to save cell edit:', err);

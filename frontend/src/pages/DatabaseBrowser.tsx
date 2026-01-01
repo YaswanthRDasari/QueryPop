@@ -60,6 +60,9 @@ export const DatabaseBrowser: React.FC = () => {
     // SQL Tab State
     const [sqlTabInitialQuery, setSqlTabInitialQuery] = useState<string | undefined>(undefined);
 
+    // Displayed SQL in Browse Tab (Controlled)
+    const [displayedSql, setDisplayedSql] = useState<string>('');
+
     // Check initialization
     const hasFetchedDatabases = useRef(false);
     const isSaving = useRef(false);
@@ -92,6 +95,13 @@ export const DatabaseBrowser: React.FC = () => {
             loadTableData(selectedTable, page, filters);
         }
     }, [page, filters]); // Note: don't include selectedTable or activeTab to avoid double-fetch on select
+
+    // Sync displayed SQL with fetched data
+    useEffect(() => {
+        if (tableData?.sql_query) {
+            setDisplayedSql(tableData.sql_query);
+        }
+    }, [tableData?.sql_query]);
 
     const fetchDatabases = async () => {
         setLoading(true);
@@ -589,10 +599,12 @@ export const DatabaseBrowser: React.FC = () => {
                                                     <textarea
                                                         id="sql-editor-textarea"
                                                         className="w-full bg-transparent font-mono text-sm text-primary-700 outline-none resize-y min-h-[40px] border-b border-transparent focus:border-primary-200 transition-colors"
-                                                        defaultValue={tableData?.sql_query || ''}
+                                                        value={displayedSql}
                                                         onChange={(e) => {
                                                             const val = e.target.value;
+                                                            setDisplayedSql(val);
                                                             const selectionStart = e.target.selectionStart;
+
                                                             const textBeforeCursor = val.slice(0, selectionStart);
                                                             const words = textBeforeCursor.split(/[\s\(\),;]+/);
                                                             const currentWord = words[words.length - 1];
@@ -627,14 +639,14 @@ export const DatabaseBrowser: React.FC = () => {
                                                                 if (e.key === 'Enter' || e.key === 'Tab') {
                                                                     e.preventDefault();
                                                                     const textarea = e.currentTarget;
-                                                                    const val = textarea.value;
+                                                                    const val = displayedSql;
                                                                     const selectionStart = textarea.selectionStart;
                                                                     const textBeforeCursor = val.slice(0, selectionStart);
                                                                     const words = textBeforeCursor.split(/[\s\(\),;]+/);
                                                                     const currentWord = words[words.length - 1];
                                                                     const completion = suggestions[suggestionIndex];
                                                                     const newVal = val.slice(0, selectionStart - currentWord.length) + completion + val.slice(selectionStart);
-                                                                    textarea.value = newVal;
+                                                                    setDisplayedSql(newVal);
                                                                     const newCursorPos = selectionStart - currentWord.length + completion.length;
                                                                     textarea.setSelectionRange(newCursorPos, newCursorPos);
                                                                     setShowSuggestions(false);
@@ -680,14 +692,14 @@ export const DatabaseBrowser: React.FC = () => {
                                                                         e.preventDefault();
                                                                         const textarea = document.getElementById('sql-editor-textarea') as HTMLTextAreaElement;
                                                                         if (textarea) {
-                                                                            const val = textarea.value;
+                                                                            const val = displayedSql;
                                                                             const selectionStart = textarea.selectionStart;
                                                                             const textBeforeCursor = val.slice(0, selectionStart);
                                                                             const words = textBeforeCursor.split(/[\s\(\),;]+/);
                                                                             const currentWord = words[words.length - 1];
                                                                             const completion = s;
                                                                             const newVal = val.slice(0, selectionStart - currentWord.length) + completion + val.slice(selectionStart);
-                                                                            textarea.value = newVal;
+                                                                            setDisplayedSql(newVal);
                                                                             const newCursorPos = selectionStart - currentWord.length + completion.length;
                                                                             textarea.setSelectionRange(newCursorPos, newCursorPos);
                                                                             setShowSuggestions(false);

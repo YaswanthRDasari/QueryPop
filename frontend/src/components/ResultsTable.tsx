@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import type { ExecuteResponse } from '../types';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Pencil, Save, X } from 'lucide-react';
+import { message } from 'antd';
 
 interface ResultsTableProps {
     result: ExecuteResponse | null;
     tableName?: string;
     primaryKey?: string;
     onCellUpdate?: (rowId: string | number, field: string, value: string) => Promise<void>;
+    onRowUpdate?: (rowId: string | number, data: Record<string, any>) => Promise<void>;
 }
 
-export const ResultsTable: React.FC<ResultsTableProps> = ({ result, tableName, primaryKey, onCellUpdate }) => {
+export const ResultsTable: React.FC<ResultsTableProps> = ({ result, tableName, primaryKey, onCellUpdate, onRowUpdate }) => {
     if (!result || !result.success || !result.rows) {
         if (result?.error) {
             return (
@@ -32,12 +34,17 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({ result, tableName, p
 
     const columns = result.columns || Object.keys(result.rows[0]);
 
-    // Editing State
+    // Editing State (Cell)
     const [editingCell, setEditingCell] = React.useState<{ rowId: string | number, field: string } | null>(null);
     const [editingValue, setEditingValue] = React.useState('');
 
+    // Editing State (Row)
+    const [editingRowId, setEditingRowId] = useState<string | number | null>(null);
+    const [editingRowData, setEditingRowData] = useState<Record<string, any>>({});
+
     const handleCellClick = (row: any, field: string, value: any) => {
         if (!tableName || !primaryKey || !onCellUpdate) return;
+        if (editingRowId !== null) return; // Disable cell click if row editing is active
 
         const rowId = row[primaryKey];
         if (rowId === undefined) return;
@@ -55,6 +62,41 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({ result, tableName, p
         await onCellUpdate(rowId, field, editingValue);
         setEditingCell(null);
         setEditingValue('');
+    };
+
+    // Row Editing Handlers
+    const startRowEdit = (row: any) => {
+        if (!primaryKey) return;
+        const rowId = row[primaryKey];
+        if (rowId === undefined) return;
+
+        setEditingRowId(rowId);
+        // Clone row for editing, handling nulls
+        const rowData: Record<string, any> = {};
+        Object.keys(row).forEach(key => {
+            rowData[key] = row[key] === null ? '' : row[key];
+        });
+        setEditingRowData(rowData);
+        setEditingCell(null);
+    };
+
+    const cancelRowEdit = () => {
+        setEditingRowId(null);
+        setEditingRowData({});
+    };
+
+    const saveRowEdit = async () => {
+        if (!editingRowId || !onRowUpdate) return;
+
+        try {
+            await onRowUpdate(editingRowId, editingRowData);
+            setEditingRowId(null);
+            setEditingRowData({});
+            message.success('Row updated successfully');
+        } catch (error) {
+            console.error('Failed to save row', error);
+            message.error('Failed to update row');
+        }
     };
 
     // Pagination State
@@ -99,9 +141,15 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({ result, tableName, p
                 <table className="w-full text-sm text-left">
                     <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0 z-10 shadow-sm">
                         <tr>
+                            {tableName && primaryKey && onRowUpdate && (
+                                <th className="px-4 py-3 font-medium whitespace-nowrap border-b border-slate-100 bg-slate-50 w-20">
+                                    Actions
+                                </th>
+                            )}
                             {columns.map((col) => (
                                 <th key={col} className="px-6 py-3 font-medium whitespace-nowrap border-b border-slate-100 bg-slate-50">
                                     {col}
+                                    {col === primaryKey && <span className="ml-1 text-primary-500">🔑</span>}
                                 </th>
                             ))}
                         </tr>
@@ -109,12 +157,52 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({ result, tableName, p
                     <tbody>
                         {currentRows.map((row, i) => {
                             // Try to find a unique ID for the key if primaryKey is not available, fallback to index
-                            const rowKey = primaryKey && row[primaryKey] ? row[primaryKey] : startIndex + i;
+                            const rowId = primaryKey && row[primaryKey];
+                            const rowKey = rowId !== undefined ? rowId : startIndex + i;
+                            const isRowEditing = editingRowId === rowId;
 
                             return (
-                                <tr key={rowKey} className="hover:bg-slate-50 border-b border-slate-100 last:border-0 transition-colors">
+                                <tr key={rowKey} className={`border-b border-slate-100 last:border-0 transition-colors ${isRowEditing ? 'bg-blue-50' : 'hover:bg-slate-50 group'}`}>
+                                    {tableName && primaryKey && onRowUpdate && (
+                                        <td className="px-4 py-2 whitespace-nowrap">
+                                            {isRowEditing ? (
+                                                <div className="flex gap-2">
+                                                    <button onClick={saveRowEdit} className="text-green-600 hover:text-green-700 p-1 rounded hover:bg-green-100">
+                                                        <Save size={16} />
+                                                    </button>
+                                                    <button onClick={cancelRowEdit} className="text-red-500 hover:text-red-600 p-1 rounded hover:bg-red-100">
+                                                        <X size={16} />
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <button
+                                                    onClick={() => startRowEdit(row)}
+                                                    className="text-slate-400 hover:text-blue-600 p-1 rounded hover:bg-blue-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                    title="Edit Row"
+                                                >
+                                                    <Pencil size={14} />
+                                                </button>
+                                            )}
+                                        </td>
+                                    )}
                                     {columns.map((col) => {
-                                        const isEditing = primaryKey && editingCell?.rowId === row[primaryKey] && editingCell?.field === col;
+                                        // Row Edit Logic
+                                        if (isRowEditing) {
+                                            const isPk = col === primaryKey;
+                                            return (
+                                                <td key={col} className="px-6 py-3 whitespace-nowrap">
+                                                    <input
+                                                        value={editingRowData[col] || ''}
+                                                        onChange={(e) => setEditingRowData(prev => ({ ...prev, [col]: e.target.value }))}
+                                                        disabled={isPk}
+                                                        className={`w-full px-2 py-1 text-xs border rounded outline-none ${isPk ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'bg-white border-blue-300 focus:border-blue-500'}`}
+                                                    />
+                                                </td>
+                                            );
+                                        }
+
+                                        // Cell Edit Logic
+                                        const isEditing = primaryKey && editingCell?.rowId === rowId && editingCell?.field === col;
                                         const val = row[col];
 
                                         return (

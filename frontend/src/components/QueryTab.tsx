@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import { dbApi } from '../services/api';
+import { dbApi, tableApi } from '../services/api'; // Added tableApi
 import { SQLEditor } from './SQLEditor';
 import { ResultsTable } from './ResultsTable';
 import { LoadingSpinner } from './LoadingSpinner';
@@ -63,6 +62,50 @@ export const QueryTab: React.FC<QueryTabProps> = ({ tableName }) => {
         }
     };
 
+    const handleCellUpdate = async (rowId: string | number, field: string, value: string) => {
+        if (!queryResult?.affected_table || !queryResult?.primary_keys?.[0]) return;
+        const tableName = queryResult.affected_table;
+        const pk = queryResult.primary_keys[0];
+
+        try {
+            await tableApi.updateRow(tableName, rowId, pk, { [field]: value });
+            // Update local state
+            setQueryResult(prev => {
+                if (!prev || !prev.rows) return prev;
+                return {
+                    ...prev,
+                    rows: prev.rows.map((row: any) => row[pk] === rowId ? { ...row, [field]: value } : row)
+                };
+            });
+        } catch (err) {
+            console.error('Update cell error', err);
+            alert('Update failed');
+        }
+    };
+
+    const handleRowUpdate = async (rowId: string | number, data: Record<string, any>) => {
+        if (!queryResult?.affected_table || !queryResult?.primary_keys?.[0]) return;
+        const tableName = queryResult.affected_table;
+        const pk = queryResult.primary_keys[0];
+
+        const { [pk]: _pk, ...updateData } = data;
+
+        try {
+            await tableApi.updateRow(tableName, rowId, pk, updateData);
+            // Update local state
+            setQueryResult(prev => {
+                if (!prev || !prev.rows) return prev;
+                return {
+                    ...prev,
+                    rows: prev.rows.map((row: any) => row[pk] === rowId ? { ...row, ...updateData } : row)
+                };
+            });
+        } catch (err) {
+            console.error('Update row error', err);
+            alert('Update failed');
+        }
+    };
+
     return (
         <div className="p-6 max-w-4xl mx-auto space-y-6">
             {/* Question Input */}
@@ -119,7 +162,13 @@ export const QueryTab: React.FC<QueryTabProps> = ({ tableName }) => {
             {queryResult && (
                 <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden p-6 animate-in fade-in slide-in-from-bottom-2">
                     <h3 className="font-bold text-slate-800 mb-4">Results</h3>
-                    <ResultsTable result={queryResult} />
+                    <ResultsTable
+                        result={queryResult}
+                        tableName={queryResult.affected_table}
+                        primaryKey={queryResult.primary_keys?.[0]}
+                        onCellUpdate={handleCellUpdate}
+                        onRowUpdate={handleRowUpdate}
+                    />
                 </div>
             )}
         </div>

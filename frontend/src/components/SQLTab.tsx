@@ -112,6 +112,46 @@ export const SQLTab: React.FC<SQLTabProps> = ({ tableName, initialSql }) => {
         }
     };
 
+    const handleRowUpdate = async (rowId: string | number, data: Record<string, any>) => {
+        if (!activeTable || !primaryKey) return;
+
+        try {
+            // Update row in partial chunks? No, we have the full row data from edit mode usually?
+            // Wait, editingRowData in ResultsTable might only contain modified fields if we were smart, 
+            // but currently it clones the WHOLE row. 
+            // Ideally we only send changed fields. 
+            // Update: tableApi.updateRow sends the `data` object as SET clauses.
+            // If we send all fields including unchanged ones, it's inefficient but safe unless concurrent edits.
+            // Let's refine: we should probably only send what changed? 
+            // For now, let's send what ResultsTable gives us, which is the whole row data from editingRowData.
+            // But wait, the `updateRow` API expects just the fields to update? Yes.
+            // Optimization: ResultsTable should probably calculate diff? 
+            // Or we just send it all. For MVP send it all (except PK which is ignored/used for WHERE).
+
+            // Exclude PK from data to avoid updating PK (which might fail or be weird)
+            const { [primaryKey]: _pk, ...updateData } = data;
+
+            const res = await tableApi.updateRow(activeTable, rowId, primaryKey, updateData);
+
+            if (res.success) {
+                if (result && result.rows) {
+                    const updatedRows = result.rows.map((row: any) => {
+                        if (row[primaryKey] === rowId) {
+                            return { ...row, ...updateData };
+                        }
+                        return row;
+                    });
+                    setResult({ ...result, rows: updatedRows });
+                }
+            } else {
+                throw new Error(res.error || 'Update failed');
+            }
+        } catch (err: any) {
+            console.error('Update row error', err);
+            throw err; // Propagate to ResultsTable to show error
+        }
+    };
+
     return (
         <div className="p-6 h-full flex flex-col gap-4">
             <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
@@ -144,6 +184,7 @@ export const SQLTab: React.FC<SQLTabProps> = ({ tableName, initialSql }) => {
                         tableName={activeTable}
                         primaryKey={primaryKey}
                         onCellUpdate={handleCellUpdate}
+                        onRowUpdate={handleRowUpdate}
                     />
                 </div>
             )}

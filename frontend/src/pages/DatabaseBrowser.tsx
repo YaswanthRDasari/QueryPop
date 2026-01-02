@@ -20,6 +20,48 @@ interface EditingCell {
     colName: string;
 }
 
+const SQL_KEYWORDS = ['SELECT', 'FROM', 'WHERE', 'LIMIT', 'ORDER', 'BY', 'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'ON', 'GROUP', 'HAVING', 'AND', 'OR', 'NOT', 'NULL', 'IS', 'LIKE', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'AS', 'DISTINCT'];
+
+const highlightSql = (sql: string) => {
+    if (!sql) return null;
+
+    // Split by word boundaries but keep delimiters to reconstruct
+    const parts = sql.split(/(\b\w+\b)/g);
+
+    return parts.map((part, i) => {
+        if (SQL_KEYWORDS.includes(part.toUpperCase())) {
+            return <span key={i} className="text-blue-600 font-bold">{part}</span>;
+        } else if (/^['"`]/.test(part)) {
+            // Basic string/quote detection (simplified as split might break strings)
+            // Actually, the simple split above isn't great for strings with spaces.
+            // Let's use a simpler approach: strict word matching? 
+            // RegEx replacement approach is better for react rendering?
+            return part;
+        }
+        return part;
+    });
+};
+
+// Improved highlighter using simple parsing
+const HighlightedSQL = ({ code }: { code: string }) => {
+    const tokens = [];
+    const regex = new RegExp(`\\b(${SQL_KEYWORDS.join('|')})\\b`, 'gi');
+    let lastIndex = 0;
+    let match;
+
+    while ((match = regex.exec(code)) !== null) {
+        if (match.index > lastIndex) {
+            tokens.push(code.slice(lastIndex, match.index));
+        }
+        tokens.push(<span key={match.index} className="text-blue-600 font-bold">{match[0]}</span>);
+        lastIndex = regex.lastIndex;
+    }
+    if (lastIndex < code.length) {
+        tokens.push(code.slice(lastIndex));
+    }
+    return <>{tokens}</>;
+};
+
 export const DatabaseBrowser: React.FC = () => {
 
     // Core State
@@ -66,6 +108,7 @@ export const DatabaseBrowser: React.FC = () => {
     // Check initialization
     const hasFetchedDatabases = useRef(false);
     const isSaving = useRef(false);
+    const backdropRef = useRef<HTMLPreElement>(null);
 
     useEffect(() => {
         if (hasFetchedDatabases.current) return;
@@ -596,10 +639,35 @@ export const DatabaseBrowser: React.FC = () => {
                                                 </div>
 
                                                 <div className="relative">
+                                                    {/* Backdrop for highlighting */}
+                                                    <pre
+                                                        ref={backdropRef}
+                                                        className="absolute inset-0 pointer-events-none p-3 font-mono text-sm whitespace-pre-wrap break-words overflow-auto text-primary-700 bg-transparent z-0"
+                                                        aria-hidden="true"
+                                                        style={{
+                                                            fontFamily: 'monospace', // Ensure font matches textarea exactly
+                                                        }}
+                                                    >
+                                                        <HighlightedSQL code={displayedSql} />
+                                                        {/* Append a generic space/char to ensure height matches if ending with newline? */}
+                                                        {displayedSql.endsWith('\n') && <br />}
+                                                    </pre>
+
                                                     <textarea
                                                         id="sql-editor-textarea"
-                                                        className="w-full bg-transparent font-mono text-sm text-primary-700 outline-none resize-y min-h-[40px] border-b border-transparent focus:border-primary-200 transition-colors"
+                                                        className="relative z-10 w-full bg-transparent font-mono text-sm text-transparent caret-black outline-none resize-y min-h-[40px] border-b border-transparent focus:border-primary-200 transition-colors p-3 overflow-auto whitespace-pre-wrap"
                                                         value={displayedSql}
+                                                        onScroll={(e) => {
+                                                            if (backdropRef.current) {
+                                                                backdropRef.current.scrollTop = e.currentTarget.scrollTop;
+                                                                backdropRef.current.scrollLeft = e.currentTarget.scrollLeft;
+                                                            }
+                                                        }}
+                                                        style={{
+                                                            color: 'transparent',
+                                                            background: 'transparent',
+                                                            caretColor: 'black', // Restore caret visibility
+                                                        }}
                                                         onChange={(e) => {
                                                             const val = e.target.value;
                                                             setDisplayedSql(val);
@@ -611,7 +679,7 @@ export const DatabaseBrowser: React.FC = () => {
 
                                                             if (currentWord.length > 0) {
                                                                 const candidates = [
-                                                                    ...['SELECT', 'FROM', 'WHERE', 'LIMIT', 'ORDER', 'BY', 'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'ON', 'GROUP', 'HAVING', 'AND', 'OR', 'NOT', 'NULL', 'IS', 'LIKE', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'AS', 'DISTINCT'],
+                                                                    ...SQL_KEYWORDS,
                                                                     ...tables.map(t => t.name),
                                                                     ...tableStructure.map(c => c.name)
                                                                 ];

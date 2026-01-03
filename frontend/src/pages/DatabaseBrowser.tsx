@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Database, Table, Columns, RefreshCw, ChevronLeft, ChevronRight, Plus, Trash2, Save, X, Loader2, ChevronDown, Search, Play, FileCode, Upload, Layout, Download, Pencil, Server } from 'lucide-react';
+import { Database, Table, Columns, RefreshCw, ChevronLeft, ChevronRight, Plus, Trash2, Save, X, Loader2, ChevronDown, Search, Play, FileCode, Upload, Layout, Download, Pencil, Server, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { message } from 'antd';
 import { dbApi, tableApi } from '../services/api';
@@ -70,6 +70,11 @@ export const DatabaseBrowser: React.FC = () => {
     const [tables, setTables] = useState<TableInfo[]>([]);
     const [selectedTable, setSelectedTable] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState<TabId>('browse');
+    const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [sidebarWidth, setSidebarWidth] = useState(288); // Default w-72 (18rem * 16px)
+    const [isResizing, setIsResizing] = useState(false);
+    const [sidebarSearch, setSidebarSearch] = useState('');
+    const [isSearchOpen, setIsSearchOpen] = useState(false);
 
     // Connection Info State
     const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
@@ -81,7 +86,7 @@ export const DatabaseBrowser: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [page, setPage] = useState(1);
-    const [perPage] = useState(50);
+    const [perPage] = useState(25);
     const [filters, setFilters] = useState<Record<string, string>>({});
 
     // Editing state
@@ -434,63 +439,174 @@ export const DatabaseBrowser: React.FC = () => {
         }
     };
 
+    // --- Sidebar Resize Logic ---
+    const startResizing = React.useCallback(() => {
+        setIsResizing(true);
+    }, []);
+
+    const stopResizing = React.useCallback(() => {
+        setIsResizing(false);
+    }, []);
+
+    const resize = React.useCallback((mouseMoveEvent: MouseEvent) => {
+        if (isResizing) {
+            const newWidth = mouseMoveEvent.clientX;
+            if (newWidth > 150 && newWidth < 600) { // Min and Max width constraints
+                setSidebarWidth(newWidth);
+            }
+        }
+    }, [isResizing]);
+
+    useEffect(() => {
+        window.addEventListener("mousemove", resize);
+        window.addEventListener("mouseup", stopResizing);
+        return () => {
+            window.removeEventListener("mousemove", resize);
+            window.removeEventListener("mouseup", stopResizing);
+        };
+    }, [resize, stopResizing]);
+
     // --- Render Helpers ---
 
     return (
         <div className="flex h-screen bg-slate-50 font-sans text-slate-900">
             {/* Sidebar */}
             {/* Sidebar */}
-            <div className="w-72 bg-slate-900 text-slate-300 flex flex-col border-r border-slate-700 shadow-xl shrink-0">
-                <div className="p-4 border-b border-slate-800 bg-slate-950">
-                    <div className="flex items-center justify-between">
-                        <h1 className="text-xl font-bold text-white flex items-center gap-2 tracking-tight">
-                            <Database className="text-primary-500" size={24} />
-                            QueryPop
-                        </h1>
+            {/* Sidebar */}
+            {/* Sidebar */}
+            <div
+                style={{ width: sidebarOpen ? sidebarWidth : 0 }}
+                className={`${sidebarOpen ? 'border-r' : 'border-none'} bg-slate-900 text-slate-300 flex flex-col shadow-xl shrink-0 transition-all duration-75 ease-out relative overflow-hidden`}
+            >
+                {/* Resize Handle */}
+                <div
+                    className="absolute right-0 top-0 w-1 h-full cursor-col-resize hover:bg-primary-500 hover:w-1.5 transition-all z-50 group translate-x-1/2"
+                    onMouseDown={startResizing}
+                >
+                    <div className={`w-0.5 h-full mx-auto bg-transparent group-hover:bg-primary-400 transition-colors ${isResizing ? 'bg-primary-500' : ''}`} />
+                </div>
+
+                <div className="p-4 border-b border-slate-800 bg-slate-950 flex items-center justify-between h-[65px]">
+                    {isSearchOpen ? (
+                        <div className="flex-1 flex items-center gap-2 mr-2 animate-in fade-in zoom-in duration-200">
+                            <div className="relative flex-1">
+                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                                <input
+                                    autoFocus
+                                    type="text"
+                                    value={sidebarSearch}
+                                    onChange={(e) => setSidebarSearch(e.target.value)}
+                                    placeholder="Filter..."
+                                    className="w-full bg-slate-800 text-slate-200 text-xs rounded pl-8 pr-7 py-1.5 border border-slate-700 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none placeholder:text-slate-500"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Escape') {
+                                            setIsSearchOpen(false);
+                                            setSidebarSearch('');
+                                        }
+                                    }}
+                                />
+                                <button
+                                    onClick={() => {
+                                        setSidebarSearch('');
+                                        setIsSearchOpen(false);
+                                    }}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                                >
+                                    <X size={12} />
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-2 overflow-hidden whitespace-nowrap animate-in fade-in zoom-in duration-200">
+                            <h1 className="text-xl font-bold text-white flex items-center gap-2 tracking-tight">
+                                <Database className="text-primary-500" size={24} />
+                                QueryPop
+                            </h1>
+                        </div>
+                    )}
+
+                    <div className="flex items-center gap-1 shrink-0">
+                        {!isSearchOpen && (
+                            <button
+                                onClick={() => setIsSearchOpen(true)}
+                                className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors"
+                                title="Search Databases & Tables"
+                            >
+                                <Search size={16} />
+                            </button>
+                        )}
                         <button onClick={fetchDatabases} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors" title="Refresh Databases">
                             <RefreshCw size={16} />
+                        </button>
+                        <button onClick={() => setSidebarOpen(false)} className="p-1.5 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors" title="Collapse Sidebar">
+                            <PanelLeftClose size={16} />
                         </button>
                     </div>
                 </div>
                 <div className="flex-1 overflow-y-auto p-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-                    {databases.map(db => (
-                        <div key={db} className="mb-1">
-                            <button
-                                onClick={() => handleDatabaseSelect(db)}
-                                className={`w-full text-left px-3 py-2 flex items-center gap-2 rounded-lg transition-colors ${expandedDb === db ? 'bg-slate-800 text-white font-medium shadow-sm ring-1 ring-slate-700' : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'}`}
-                            >
-                                <Database size={14} className={expandedDb === db ? 'text-primary-400' : 'text-slate-500'} />
-                                <span className="truncate text-sm flex-1">{db}</span>
-                                {expandedDb === db ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-600" />}
-                            </button>
-                            {expandedDb === db && (
-                                <div className="ml-5 mt-1 border-l border-slate-700 pl-2 space-y-0.5">
-                                    {loading && tables.length === 0 ? (
-                                        <div className="px-3 py-2 text-xs text-slate-500 flex items-center gap-2">
-                                            <Loader2 size={12} className="animate-spin" />
-                                            <span>Loading tables...</span>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            {tables.map(table => (
-                                                <button
-                                                    key={table.name}
-                                                    onClick={() => setSelectedTable(table.name)}
-                                                    className={`w-full text-left px-3 py-1.5 flex items-center gap-2 rounded text-xs transition-colors ${selectedTable === table.name ? 'text-primary-300 bg-primary-500/10 font-medium' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/30'}`}
-                                                >
-                                                    <Table size={13} className={selectedTable === table.name ? 'text-primary-400' : 'text-slate-600'} />
-                                                    <span className="truncate">{table.name}</span>
-                                                </button>
-                                            ))}
-                                            {tables.length === 0 && !loading && (
-                                                <div className="px-3 py-1 text-xs text-slate-500">No tables</div>
-                                            )}
-                                        </>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    ))}
+                    {databases.map(db => {
+                        const isExpanded = expandedDb === db;
+                        const searchTerm = sidebarSearch.toLowerCase();
+                        const matchesDb = db.toLowerCase().includes(searchTerm);
+
+                        // Filter tables if this DB is expanded
+                        const filteredTables = isExpanded
+                            ? tables.filter(t => t.name.toLowerCase().includes(searchTerm))
+                            : [];
+
+                        const hasMatchingTables = filteredTables.length > 0;
+
+                        // Hide DB if it doesn't match AND (it's not expanded OR no tables match)
+                        // But if search is empty, show everything (matchesDb will be true)
+                        if (!matchesDb && !(isExpanded && hasMatchingTables)) {
+                            return null;
+                        }
+
+                        return (
+                            <div key={db} className="mb-1">
+                                <button
+                                    onClick={() => handleDatabaseSelect(db)}
+                                    className={`w-full text-left px-3 py-2 flex items-center gap-2 rounded-lg transition-colors ${isExpanded ? 'bg-slate-800 text-white font-medium shadow-sm ring-1 ring-slate-700' : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'}`}
+                                >
+                                    <Database size={14} className={isExpanded ? 'text-primary-400' : 'text-slate-500'} />
+                                    <span className="truncate text-sm flex-1">
+                                        {/* Highlight match? Optional but nice */}
+                                        {db}
+                                    </span>
+                                    {isExpanded ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-600" />}
+                                </button>
+                                {isExpanded && (
+                                    <div className="ml-5 mt-1 border-l border-slate-700 pl-2 space-y-0.5">
+                                        {loading && tables.length === 0 ? (
+                                            <div className="px-3 py-2 text-xs text-slate-500 flex items-center gap-2">
+                                                <Loader2 size={12} className="animate-spin" />
+                                                <span>Loading tables...</span>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                {filteredTables.map(table => (
+                                                    <button
+                                                        key={table.name}
+                                                        onClick={() => setSelectedTable(table.name)}
+                                                        className={`w-full text-left px-3 py-1.5 flex items-center gap-2 rounded text-xs transition-colors ${selectedTable === table.name ? 'text-primary-300 bg-primary-500/10 font-medium' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/30'}`}
+                                                    >
+                                                        <Table size={13} className={selectedTable === table.name ? 'text-primary-400' : 'text-slate-600'} />
+                                                        <span className="truncate">{table.name}</span>
+                                                    </button>
+                                                ))}
+                                                {tables.length === 0 && !loading && (
+                                                    <div className="px-3 py-1 text-xs text-slate-500">No tables</div>
+                                                )}
+                                                {tables.length > 0 && filteredTables.length === 0 && (
+                                                    <div className="px-3 py-1 text-xs text-slate-500 italic">No matching tables</div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
             </div>
 
@@ -501,6 +617,11 @@ export const DatabaseBrowser: React.FC = () => {
                     <div className="bg-white border-b border-slate-200 px-6 pt-4 pb-0">
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-3">
+                                {!sidebarOpen && (
+                                    <button onClick={() => setSidebarOpen(true)} className="p-1.5 hover:bg-slate-100 rounded text-slate-500 mr-2" title="Expand Sidebar">
+                                        <PanelLeftOpen size={20} />
+                                    </button>
+                                )}
                                 <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                                     <span className="text-slate-400 font-normal">{expandedDb} /</span>
                                     {selectedTable}
@@ -560,7 +681,14 @@ export const DatabaseBrowser: React.FC = () => {
                     </div>
                 ) : (
                     <div className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between h-[73px]">
-                        <h2 className="text-lg font-medium text-slate-500">Select a table to start</h2>
+                        <div className="flex items-center gap-3">
+                            {!sidebarOpen && (
+                                <button onClick={() => setSidebarOpen(true)} className="p-1.5 hover:bg-slate-100 rounded text-slate-500 mr-2" title="Expand Sidebar">
+                                    <PanelLeftOpen size={20} />
+                                </button>
+                            )}
+                            <h2 className="text-lg font-medium text-slate-500">Select a table to start</h2>
+                        </div>
                         {/* Connection Info in Top Bar (Empty State) */}
                         {connectionInfo && (
                             <div className="text-xs flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-200 text-slate-600">

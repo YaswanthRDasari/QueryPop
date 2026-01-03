@@ -125,7 +125,7 @@ export const tableApi = {
     getTableData: async (
         tableName: string,
         page: number = 1,
-        perPage: number = 50,
+        perPage: number = 25,
         orderBy?: string,
         orderDir: 'asc' | 'desc' = 'asc',
         filters?: Record<string, string>

@@ -271,7 +271,7 @@ class TableManager:
             logger.error(f"Failed to get table structure: {e}")
             return {"success": False, "error": str(e)}
 
-    def get_table_data(self, table_name, page=1, per_page=50, order_by=None, order_dir='asc', filters=None):
+    def get_table_data(self, table_name, page=1, per_page=25, order_by=None, order_dir='asc', filters=None):
         """Get paginated table data with optional filtering."""
         if not self.db_connector.engine:
             return {"success": False, "error": "Not connected to database"}

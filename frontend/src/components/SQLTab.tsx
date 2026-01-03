@@ -9,7 +9,7 @@ interface SQLTabProps {
 }
 
 export const SQLTab: React.FC<SQLTabProps> = ({ tableName, initialSql }) => {
-    const defaultSql = initialSql || (tableName ? `SELECT * FROM \`${tableName}\` LIMIT 50` : 'SHOW TABLES');
+    const defaultSql = initialSql || (tableName ? `SELECT * FROM \`${tableName}\` LIMIT 25` : 'SHOW TABLES');
     const [sql, setSql] = useState(defaultSql);
     const [result, setResult] = useState<any>(null);
     const [loading, setLoading] = useState(false);

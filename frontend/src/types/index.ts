@@ -42,6 +42,7 @@ export interface ExecuteResponse {
     affected_table?: string;
     primary_keys?: string[];
     error?: string;
+    profile_stats?: Record<string, any>[];
 }
 
 export interface QueryHistoryItem {
@@ -115,4 +116,5 @@ export interface TableDataResponse {
     execution_time?: number;
     pagination?: PaginationInfo;
     error?: string;
+    profile_stats?: Record<string, any>[];
 }

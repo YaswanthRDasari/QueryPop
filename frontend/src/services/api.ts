@@ -82,9 +82,9 @@ export const dbApi = {
         }
     },
 
-    executeQuery: async (sql: string, question?: string): Promise<ExecuteResponse> => {
+    executeQuery: async (sql: string, question?: string, profile?: boolean): Promise<ExecuteResponse> => {
         try {
-            const response = await api.post('/query/execute', { sql, question });
+            const response = await api.post('/query/execute', { sql, question, profile });
             return response.data;
         } catch (error: any) {
             return error.response?.data || { success: false, error: 'Execution failed' };

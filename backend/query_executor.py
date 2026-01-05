@@ -32,7 +32,7 @@ class QueryExecutor:
         except Exception as e:
             logger.error(f"Failed to init history DB: {e}")
 
-    def execute_and_log(self, sql_query, question=""):
+    def execute_and_log(self, sql_query, question="", profile=False):
         """
         Validates, executes, and logs a query.
         """
@@ -59,13 +59,14 @@ class QueryExecutor:
             # Implementation pending threading complexity, for now assumes db driver handles reasonable timeouts
             # or we set query timeout in connection args.
             
-            result = self.db_connector.execute_query(sql_query)
+            result = self.db_connector.execute_query(sql_query, profile=profile)
             
             execution_time_ms = (time.time() - start_time) * 1000
             
             if result.get("success"):
                 status = "success"
                 row_count = result.get("row_count", 0)
+                profile_stats = result.get("profile_stats", [])
                 
                 # Try to detect table and PK for editing
                 affected_table = None
@@ -104,7 +105,8 @@ class QueryExecutor:
                     "execution_time_ms": execution_time_ms,
                     "row_count": row_count,
                     "affected_table": affected_table,
-                    "primary_keys": primary_keys
+                    "primary_keys": primary_keys,
+                    "profile_stats": profile_stats
                 }
             else:
                 error_msg = result.get("error")

@@ -218,11 +218,12 @@ def execute_query():
     data = request.json
     sql = data.get('sql')
     question = data.get('question', '') # Optional context for logging
+    profile = data.get('profile', False)
     
     if not sql:
         return jsonify({"error": "SQL query required"}), 400
         
-    result = query_executor.execute_and_log(sql, question)
+    result = query_executor.execute_and_log(sql, question, profile=profile)
     
     if result["success"]:
         return jsonify(result), 200

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Database, Table, Columns, RefreshCw, ChevronLeft, ChevronRight, Plus, Trash2, Save, X, Loader2, ChevronDown, Search, Play, FileCode, Upload, Layout, Download, Pencil, Server, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
-import Swal from 'sweetalert2';
+
+
 import { message } from 'antd';
 import { dbApi, tableApi } from '../services/api';
 import type { TableInfo, TableDataResponse, ColumnInfo, ConnectionInfo } from '../types';
@@ -75,7 +76,17 @@ export const DatabaseBrowser: React.FC = () => {
     const [isResizing, setIsResizing] = useState(false);
     const [sidebarSearch, setSidebarSearch] = useState('');
     const [isSearchOpen, setIsSearchOpen] = useState(false);
+
     const [showProfiling, setShowProfiling] = useState(false);
+    const [showExportDialog, setShowExportDialog] = useState(false);
+    const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+    const [rowToDelete, setRowToDelete] = useState<string | number | null>(null);
+    const [showExplainDialog, setShowExplainDialog] = useState(false);
+
+    const [explainData, setExplainData] = useState<any[]>([]);
+    const [showSaveRowDialog, setShowSaveRowDialog] = useState(false);
+    const [pendingRowChanges, setPendingRowChanges] = useState<{ key: string, original: string, new: string }[]>([]);
+    const [pendingSaveData, setPendingSaveData] = useState<Record<string, any>>({});
 
     // Connection Info State
     const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
@@ -197,6 +208,59 @@ export const DatabaseBrowser: React.FC = () => {
     };
 
     // ... rest of the component ...
+
+
+
+    const handleExportResults = (format: 'csv' | 'json') => {
+        if (!tableData?.rows || tableData.rows.length === 0) {
+            message.warning('No data to export');
+            return;
+        }
+
+        let content = '';
+        let filename = `query_results_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}`;
+
+        if (format === 'csv') {
+            const headers = tableData.columns || Object.keys(tableData.rows[0]);
+            content = [
+                headers.join(','),
+                ...tableData.rows.map(row => headers.map(header => {
+                    const cell = row[header];
+                    // Handle special characters and quotes
+                    if (cell === null || cell === undefined) return '';
+                    const cellStr = String(cell);
+                    return cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')
+                        ? `"${cellStr.replace(/"/g, '""')}"`
+                        : cellStr;
+                }).join(','))
+            ].join('\n');
+            filename += '.csv';
+        } else {
+            content = JSON.stringify(tableData.rows, null, 2);
+            filename += '.json';
+        }
+
+        const blob = new Blob([content], { type: format === 'csv' ? 'text/csv;charset=utf-8;' : 'application/json;charset=utf-8;' });
+        const link = document.createElement('a');
+        if (link.download !== undefined) {
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    };
+
+    const openExportDialog = () => {
+        if (!tableData?.rows || tableData.rows.length === 0) {
+            message.warning('No data to export');
+            return;
+        }
+        setShowExportDialog(true);
+    };
+
 
 
     const handleDatabaseSelect = async (dbName: string) => {
@@ -337,31 +401,25 @@ export const DatabaseBrowser: React.FC = () => {
         }
     };
 
-    const deleteRow = async (row: Record<string, any>) => {
-        if (!selectedTable) return;
-
+    const deleteRow = (row: Record<string, any>) => {
         const pkValue = getPrimaryKeyValue(row);
+        setRowToDelete(pkValue);
+        setShowDeleteDialog(true);
+    };
 
-        const result = await Swal.fire({
-            title: 'Delete Row?',
-            text: `Are you sure you want to delete row with ID ${pkValue}?`,
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#d33',
-            cancelButtonColor: '#3085d6',
-            confirmButtonText: 'Yes, delete it!'
-        });
+    const confirmDeleteRow = async () => {
+        if (!selectedTable || rowToDelete === null) return;
 
-        if (!result.isConfirmed) return;
-
-        const apiResult = await tableApi.deleteRow(selectedTable, pkValue, getPrimaryKeyColumn());
+        const apiResult = await tableApi.deleteRow(selectedTable, rowToDelete, getPrimaryKeyColumn());
         if (apiResult.success) {
-            Swal.fire('Deleted!', 'The row has been deleted.', 'success');
+            message.success('The row has been deleted.');
             await loadTableData(selectedTable, page, filters);
         } else {
             setError(apiResult.error || 'Delete failed');
-            Swal.fire('Error', apiResult.error || 'Delete failed', 'error');
+            message.error(apiResult.error || 'Delete failed');
         }
+        setShowDeleteDialog(false);
+        setRowToDelete(null);
     };
 
     // --- Row Editing Handlers ---
@@ -389,7 +447,7 @@ export const DatabaseBrowser: React.FC = () => {
         const originalRow = tableData?.rows?.find(r => getPrimaryKeyValue(r) === editingRowPk);
         if (!originalRow) return;
 
-        const changes: string[] = [];
+        const changes: { key: string, original: string, new: string }[] = [];
         const changedData: Record<string, any> = {};
 
         // Identify changes
@@ -405,7 +463,7 @@ export const DatabaseBrowser: React.FC = () => {
             // Note: editingRowData init forces null -> ''. If original is null and new is '', treat as no change?
             // User might want to set empty string. Let's assume strict diff for now but be careful with nulls.
             if (strOriginal !== strNew) {
-                changes.push(`<b>${key}</b>: ${strOriginal} &rarr; <b>${strNew}</b>`);
+                changes.push({ key, original: strOriginal, new: strNew });
                 changedData[key] = newVal;
             }
         });
@@ -416,28 +474,28 @@ export const DatabaseBrowser: React.FC = () => {
             return;
         }
 
-        const result = await Swal.fire({
-            title: 'Confirm Changes',
-            html: `<div class="text-left text-sm">${changes.join('<br>')}</div>`,
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonText: 'Save Changes',
-            confirmButtonColor: '#3085d6',
-        });
+        setPendingRowChanges(changes);
+        setPendingSaveData(changedData);
+        setShowSaveRowDialog(true);
+    };
 
-        if (!result.isConfirmed) return;
+    const confirmSaveRow = async () => {
+        if (!selectedTable || editingRowPk === null) return;
 
-        const apiResult = await tableApi.updateRow(selectedTable, editingRowPk, getPrimaryKeyColumn(), editingRowData);
+        const apiResult = await tableApi.updateRow(selectedTable, editingRowPk, getPrimaryKeyColumn(), pendingSaveData);
 
         if (apiResult.success) {
             await loadTableData(selectedTable, page, filters);
             setEditingRowPk(null);
             setEditingRowData({});
-            Swal.fire('Saved!', 'Your changes has been updated.', 'success');
+            setPendingSaveData({});
+            setPendingRowChanges([]);
+            message.success('Your changes have been updated.');
         } else {
             setError(apiResult.error || 'Update failed');
-            Swal.fire('Error', apiResult.error || 'Update failed', 'error');
+            message.error(apiResult.error || 'Update failed');
         }
+        setShowSaveRowDialog(false);
     };
 
     // --- Sidebar Resize Logic ---
@@ -958,6 +1016,16 @@ export const DatabaseBrowser: React.FC = () => {
                                                     Profiling
                                                 </label>
 
+                                                <span className="text-slate-300">|</span>
+                                                <button
+                                                    onClick={openExportDialog}
+                                                    className="hover:text-primary-600 hover:underline"
+                                                    title="Export results"
+                                                >
+                                                    [ Export ]
+                                                </button>
+
+
                                                 {/* Profiling Results (Moved here) */}
                                                 {showProfiling && tableData?.profile_stats && (tableData.profile_stats.length > 0 ? (
                                                     <div className="w-full mt-4 mb-4 grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in slide-in-from-top-2 duration-300">
@@ -1085,36 +1153,10 @@ export const DatabaseBrowser: React.FC = () => {
                                                         setLoading(false);
 
                                                         if (result.success && result.rows) {
-                                                            const columns = result.columns || [];
-                                                            const rows = result.rows;
-
-                                                            const htmlTable = `
-                                                                <div class="overflow-x-auto text-left">
-                                                                    <table class="w-full text-xs text-slate-600 border-collapse">
-                                                                        <thead>
-                                                                            <tr class="bg-slate-100 border-b border-slate-200">
-                                                                                ${columns.map((c: string) => `<th class="p-2 border-r border-slate-200 last:border-0">${c}</th>`).join('')}
-                                                                            </tr>
-                                                                        </thead>
-                                                                        <tbody>
-                                                                            ${rows.map((r: any) => `
-                                                                                <tr class="border-b border-slate-100 last:border-0">
-                                                                                    ${columns.map((c: string) => `<td class="p-2 border-r border-slate-100 last:border-0">${r[c] !== null ? r[c] : 'NULL'}</td>`).join('')}
-                                                                                </tr>
-                                                                            `).join('')}
-                                                                        </tbody>
-                                                                    </table>
-                                                                </div>
-                                                            `;
-
-                                                            Swal.fire({
-                                                                title: 'Explain SQL',
-                                                                html: htmlTable,
-                                                                width: '800px',
-                                                                confirmButtonText: 'Close'
-                                                            });
+                                                            setExplainData(result.rows);
+                                                            setShowExplainDialog(true);
                                                         } else {
-                                                            Swal.fire('Error', result.error || 'Failed to explain query', 'error');
+                                                            message.error(result.error || 'Failed to explain query');
                                                         }
                                                     }}
                                                     className="hover:text-primary-600 hover:underline"
@@ -1406,6 +1448,201 @@ export const DatabaseBrowser: React.FC = () => {
                     )}
                 </div>
             </div>
-        </div>
+
+            {/* Export Dialog */}
+            {showExportDialog && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                            <h3 className="font-semibold text-slate-800">Export Results</h3>
+                            <button
+                                onClick={() => setShowExportDialog(false)}
+                                className="text-slate-400 hover:text-slate-600 transition-colors"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            <p className="text-slate-600 mb-6 text-sm">Choose the format you would like to export your query results in.</p>
+                            <div className="grid grid-cols-2 gap-4">
+                                <button
+                                    onClick={() => {
+                                        handleExportResults('csv');
+                                        setShowExportDialog(false);
+                                    }}
+                                    className="flex flex-col items-center gap-3 p-4 rounded-lg border border-slate-200 hover:border-primary-500 hover:bg-primary-50 transition-all group"
+                                >
+                                    <FileCode size={32} className="text-slate-400 group-hover:text-primary-500 transition-colors" />
+                                    <span className="font-medium text-slate-700 group-hover:text-primary-700">CSV</span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        handleExportResults('json');
+                                        setShowExportDialog(false);
+                                    }}
+                                    className="flex flex-col items-center gap-3 p-4 rounded-lg border border-slate-200 hover:border-primary-500 hover:bg-primary-50 transition-all group"
+                                >
+                                    <FileCode size={32} className="text-slate-400 group-hover:text-primary-500 transition-colors" />
+                                    <span className="font-medium text-slate-700 group-hover:text-primary-700">JSON</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex justify-end">
+                            <button
+                                onClick={() => setShowExportDialog(false)}
+                                className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-200/50 rounded transition-colors"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )
+            }
+            {/* Delete Confirmation Dialog */}
+            {showDeleteDialog && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-6 text-center">
+                            <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto mb-4">
+                                <Trash2 size={24} />
+                            </div>
+                            <h3 className="text-lg font-semibold text-slate-800 mb-2">Delete Row?</h3>
+                            <p className="text-slate-600 text-sm mb-6">
+                                Are you sure you want to delete the row with ID <span className="font-mono font-medium text-slate-800">{rowToDelete}</span>? This action cannot be undone.
+                            </p>
+                            <div className="flex items-center justify-center gap-3">
+                                <button
+                                    onClick={() => {
+                                        setShowDeleteDialog(false);
+                                        setRowToDelete(null);
+                                    }}
+                                    className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={confirmDeleteRow}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors shadow-sm"
+                                >
+                                    Yes, delete it!
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Save Confirmation Dialog */}
+            {showSaveRowDialog && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="p-6">
+                            <div className="flex items-center gap-3 mb-4 text-slate-800">
+                                <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center shrink-0">
+                                    <Save size={20} />
+                                </div>
+                                <h3 className="text-lg font-semibold">Confirm Changes</h3>
+                            </div>
+
+                            <p className="text-slate-600 text-sm mb-4">
+                                Are you sure you want to save the following changes to this row?
+                            </p>
+
+                            <div className="bg-slate-50 rounded-lg border border-slate-200 p-3 max-h-[40vh] overflow-y-auto mb-6">
+                                <table className="w-full text-sm">
+                                    <thead>
+                                        <tr className="text-left text-xs font-semibold text-slate-500 border-b border-slate-200">
+                                            <th className="pb-2 pl-2">Column</th>
+                                            <th className="pb-2">Original</th>
+                                            <th className="pb-2 w-4"></th>
+                                            <th className="pb-2 pr-2">New</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {pendingRowChanges.map((change, i) => (
+                                            <tr key={i}>
+                                                <td className="py-2 pl-2 font-medium text-slate-700">{change.key}</td>
+                                                <td className="py-2 text-red-600 break-all">{change.original}</td>
+                                                <td className="py-2 text-slate-400 px-2">&rarr;</td>
+                                                <td className="py-2 pr-2 text-green-600 font-medium break-all">{change.new}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-3">
+                                <button
+                                    onClick={() => {
+                                        setShowSaveRowDialog(false);
+                                    }}
+                                    className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={confirmSaveRow}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
+                                >
+                                    Save Changes
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Explain Dialog */}
+            {
+                showExplainDialog && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in duration-200">
+                        <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl overflow-hidden animate-in zoom-in-95 duration-200">
+                            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                                <h3 className="font-semibold text-slate-800">Explain SQL</h3>
+                                <button
+                                    onClick={() => setShowExplainDialog(false)}
+                                    className="text-slate-400 hover:text-slate-600 transition-colors"
+                                >
+                                    <X size={20} />
+                                </button>
+                            </div>
+                            <div className="p-0 overflow-auto max-h-[60vh]">
+                                <table className="w-full text-xs text-left border-collapse">
+                                    <thead className="bg-slate-50 sticky top-0 z-10">
+                                        <tr>
+                                            {explainData.length > 0 && Object.keys(explainData[0]).map(key => (
+                                                <th key={key} className="px-4 py-3 border-b border-slate-200 font-semibold text-slate-600 whitespace-nowrap">
+                                                    {key}
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {explainData.map((row, i) => (
+                                            <tr key={i} className="hover:bg-white/50 border-b border-slate-100 last:border-0">
+                                                {Object.values(row).map((val, j) => (
+                                                    <td key={j} className="px-4 py-2 text-slate-700 whitespace-nowrap">
+                                                        {String(val)}
+                                                    </td>
+                                                ))}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex justify-end">
+                                <button
+                                    onClick={() => setShowExplainDialog(false)}
+                                    className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-200/50 rounded transition-colors"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+        </div >
     );
 };

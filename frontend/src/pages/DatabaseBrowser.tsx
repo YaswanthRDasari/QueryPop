@@ -75,6 +75,7 @@ export const DatabaseBrowser: React.FC = () => {
     const [isResizing, setIsResizing] = useState(false);
     const [sidebarSearch, setSidebarSearch] = useState('');
     const [isSearchOpen, setIsSearchOpen] = useState(false);
+    const [showProfiling, setShowProfiling] = useState(false);
 
     // Connection Info State
     const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null);
@@ -738,7 +739,7 @@ export const DatabaseBrowser: React.FC = () => {
                                                     <span className="font-bold">✓</span>
                                                     <span>
                                                         Showing rows {Math.min((tableData.pagination.page - 1) * tableData.pagination.per_page + 1, tableData.pagination.total_count)} - {Math.min(tableData.pagination.page * tableData.pagination.per_page, tableData.pagination.total_count)}
-                                                        ({tableData.pagination.total_count} total, Query took {tableData.execution_time ? tableData.execution_time.toFixed(4) : '0.00'} seconds.)
+                                                        ({tableData.pagination.total_count} total{showProfiling && tableData.execution_time ? `, Query took ${tableData.execution_time.toFixed(4)} seconds` : ''}.)
                                                     </span>
                                                 </div>
                                             ) : (
@@ -746,7 +747,7 @@ export const DatabaseBrowser: React.FC = () => {
                                                     <span className="font-bold">✓</span>
                                                     <span>
                                                         Showing {tableData?.rows?.length || 0} rows
-                                                        {tableData?.execution_time && `(Query took ${tableData.execution_time.toFixed(4)} seconds)`}
+                                                        {showProfiling && tableData?.execution_time && ` (Query took ${tableData.execution_time.toFixed(4)} seconds)`}
                                                     </span>
                                                 </div>
                                             )}
@@ -919,7 +920,7 @@ export const DatabaseBrowser: React.FC = () => {
 
                                                                 const query = textarea.value;
                                                                 setLoading(true);
-                                                                const result = await dbApi.executeQuery(query);
+                                                                const result = await dbApi.executeQuery(query, undefined, showProfiling);
                                                                 setLoading(false);
 
                                                                 if (result.success && result.rows) {
@@ -930,7 +931,8 @@ export const DatabaseBrowser: React.FC = () => {
                                                                         rows: result.rows,
                                                                         sql_query: query,
                                                                         execution_time: (result.execution_time_ms || 0) / 1000,
-                                                                        pagination: undefined
+                                                                        pagination: undefined,
+                                                                        profile_stats: result.profile_stats
                                                                     });
                                                                 } else {
                                                                     setError(result.error || 'Query execution failed');
@@ -946,10 +948,115 @@ export const DatabaseBrowser: React.FC = () => {
 
                                             {/* SQL Options Bar */}
                                             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600 mb-2">
-                                                <label className="flex items-center gap-1 cursor-pointer">
-                                                    <input type="checkbox" className="rounded text-primary-600 focus:ring-primary-500 border-gray-300" />
+                                                <label className="flex items-center gap-1 cursor-pointer select-none">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="rounded text-primary-600 focus:ring-primary-500 border-gray-300"
+                                                        checked={showProfiling}
+                                                        onChange={(e) => setShowProfiling(e.target.checked)}
+                                                    />
                                                     Profiling
                                                 </label>
+
+                                                {/* Profiling Results (Moved here) */}
+                                                {showProfiling && tableData?.profile_stats && (tableData.profile_stats.length > 0 ? (
+                                                    <div className="w-full mt-4 mb-4 grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in slide-in-from-top-2 duration-300">
+                                                        {/* Detailed Profile */}
+                                                        <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+                                                            <div className="px-4 py-3 bg-gradient-to-b from-slate-50 to-slate-100 border-b border-slate-200 font-bold text-slate-700 flex items-center justify-between">
+                                                                <span>Detailed profile</span>
+                                                            </div>
+                                                            <div className="overflow-auto max-h-60 scrollbar-thin scrollbar-thumb-slate-200">
+                                                                <table className="w-full text-sm text-left border-collapse">
+                                                                    <thead className="bg-slate-100 border-b border-slate-200 sticky top-0 z-10 text-xs uppercase font-semibold text-slate-600">
+                                                                        <tr>
+                                                                            <th className="px-3 py-2 border-r border-slate-200 w-12">Order</th>
+                                                                            <th className="px-3 py-2 border-r border-slate-200">State</th>
+                                                                            <th className="px-3 py-2 text-right">Time</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody className="divide-y divide-slate-100">
+                                                                        {(() => {
+                                                                            const formatDuration = (s: number) => {
+                                                                                if (s < 0.000001) return `${(s * 1000000000).toFixed(0)} ns`;
+                                                                                if (s < 0.001) return `${(s * 1000000).toFixed(0)} µs`;
+                                                                                if (s < 1) return `${(s * 1000).toFixed(2)} ms`;
+                                                                                return `${s.toFixed(4)} s`;
+                                                                            };
+
+                                                                            return tableData.profile_stats!.map((row, i) => (
+                                                                                <tr key={i} className="hover:bg-blue-50/50 transition-colors odd:bg-slate-50/30">
+                                                                                    <td className="px-3 py-1.5 text-slate-500 text-right border-r border-slate-100 font-mono text-xs">{i + 1}</td>
+                                                                                    <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100">{row.Status}</td>
+                                                                                    <td className="px-3 py-1.5 text-right font-mono text-xs text-slate-600">{formatDuration(parseFloat(row.Duration))}</td>
+                                                                                </tr>
+                                                                            ));
+                                                                        })()}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Summary */}
+                                                        <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+                                                            <div className="px-4 py-3 bg-gradient-to-b from-slate-50 to-slate-100 border-b border-slate-200 font-bold text-slate-700 flex items-center justify-between">
+                                                                <span>Summary by state</span>
+                                                            </div>
+                                                            <div className="overflow-auto max-h-60 scrollbar-thin scrollbar-thumb-slate-200">
+                                                                <table className="w-full text-sm text-left border-collapse">
+                                                                    <thead className="bg-slate-100 border-b border-slate-200 sticky top-0 z-10 text-xs uppercase font-semibold text-slate-600">
+                                                                        <tr>
+                                                                            <th className="px-3 py-2 border-r border-slate-200">State</th>
+                                                                            <th className="px-3 py-2 border-r border-slate-200 text-right">Total Time</th>
+                                                                            <th className="px-3 py-2 border-r border-slate-200 text-right">% Time</th>
+                                                                            <th className="px-3 py-2 border-r border-slate-200 text-right">Calls</th>
+                                                                            <th className="px-3 py-2 text-right">ø Time</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody className="divide-y divide-slate-100">
+                                                                        {(() => {
+                                                                            const formatDuration = (s: number) => {
+                                                                                if (s < 0.000001) return `${(s * 1000000000).toFixed(0)} ns`;
+                                                                                if (s < 0.001) return `${(s * 1000000).toFixed(0)} µs`;
+                                                                                if (s < 1) return `${(s * 1000).toFixed(2)} ms`;
+                                                                                return `${s.toFixed(4)} s`;
+                                                                            };
+
+                                                                            const totalTime = tableData.profile_stats!.reduce((acc, r) => acc + parseFloat(r.Duration), 0);
+                                                                            const summary = tableData.profile_stats!.reduce((acc, curr) => {
+                                                                                const state = curr.Status;
+                                                                                const duration = parseFloat(curr.Duration);
+                                                                                if (!acc[state]) acc[state] = { state, total: 0, count: 0 };
+                                                                                acc[state].total += duration;
+                                                                                acc[state].count += 1;
+                                                                                return acc;
+                                                                            }, {} as Record<string, { state: string, total: number, count: number }>);
+
+                                                                            return Object.values(summary)
+                                                                                .sort((a, b) => b.total - a.total)
+                                                                                .map((row, i) => (
+                                                                                    <tr key={i} className="hover:bg-blue-50/50 transition-colors odd:bg-slate-50/30">
+                                                                                        <td className="px-3 py-1.5 text-slate-700 border-r border-slate-100 font-medium">{row.state}</td>
+                                                                                        <td className="px-3 py-1.5 text-right font-mono text-xs text-slate-600 border-r border-slate-100">{formatDuration(row.total)}</td>
+                                                                                        <td className="px-3 py-1.5 text-right font-mono text-xs text-slate-600 border-r border-slate-100">
+                                                                                            {((row.total / totalTime) * 100).toFixed(2)}%
+                                                                                        </td>
+                                                                                        <td className="px-3 py-1.5 text-right font-mono text-xs text-slate-600 border-r border-slate-100">{row.count}</td>
+                                                                                        <td className="px-3 py-1.5 text-right font-mono text-xs text-slate-600">{formatDuration(row.total / row.count)}</td>
+                                                                                    </tr>
+                                                                                ));
+                                                                        })()}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="w-full mt-2 mb-2 bg-yellow-50 border border-yellow-200 rounded-lg p-2 text-yellow-800 flex items-center gap-2 text-xs">
+                                                        <span className="font-semibold">Info:</span>
+                                                        <span>No profiling data returned.</span>
+                                                    </div>
+                                                ))}
                                                 <span className="text-slate-300">|</span>
                                                 <button
                                                     onClick={() => document.getElementById('sql-editor-textarea')?.focus()}
@@ -1069,219 +1176,222 @@ export const DatabaseBrowser: React.FC = () => {
                                             <Loader2 className="animate-spin text-primary-600" size={32} />
                                         </div>
                                     ) : (
-                                        <div className="bg-white rounded-lg border border-slate-200 shadow-sm flex flex-col">
-                                            <div>
-                                                <table className="w-full text-sm text-left">
-                                                    <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 shadow-sm z-10">
-                                                        <tr>
-                                                            <th className="px-4 py-3 font-semibold text-slate-500 uppercase w-20 bg-slate-50">Actions</th>
-                                                            {tableData?.columns?.map(col => (
-                                                                <th key={col} className="px-4 py-3 font-semibold text-slate-500 uppercase whitespace-nowrap bg-slate-50">
-                                                                    {col}
-                                                                    {primaryKeys.includes(col) && <span className="ml-1 text-primary-500">🔑</span>}
-                                                                </th>
-                                                            ))}
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody>
-                                                        {isAddingRow && (
-                                                            <tr className="bg-green-50 border-b border-green-200">
-                                                                <td className="px-4 py-2">
-                                                                    <div className="flex gap-1">
-                                                                        <button onClick={saveNewRow} className="p-1 text-green-600 hover:bg-green-100 rounded"><Save size={14} /></button>
-                                                                        <button onClick={() => setIsAddingRow(false)} className="p-1 text-slate-500 hover:bg-slate-100 rounded"><X size={14} /></button>
-                                                                    </div>
-                                                                </td>
+                                        <>
+                                            <div className="bg-white rounded-lg border border-slate-200 shadow-sm flex flex-col">
+                                                <div>
+                                                    <table className="w-full text-sm text-left">
+                                                        <thead className="bg-slate-50 border-b border-slate-200 sticky top-0 shadow-sm z-10">
+                                                            <tr>
+                                                                <th className="px-4 py-3 font-semibold text-slate-500 uppercase w-20 bg-slate-50">Actions</th>
                                                                 {tableData?.columns?.map(col => (
-                                                                    <td key={col} className="px-4 py-2">
-                                                                        <input
-                                                                            value={newRowData[col] || ''}
-                                                                            onChange={e => setNewRowData({ ...newRowData, [col]: e.target.value })}
-                                                                            className="w-full px-2 py-1 border border-green-300 rounded text-sm bg-white"
-                                                                            placeholder={tableStructure.find(c => c.name === col)?.autoincrement ? '(auto)' : ''}
-                                                                            disabled={tableStructure.find(c => c.name === col)?.autoincrement}
-                                                                        />
-                                                                    </td>
+                                                                    <th key={col} className="px-4 py-3 font-semibold text-slate-500 uppercase whitespace-nowrap bg-slate-50">
+                                                                        {col}
+                                                                        {primaryKeys.includes(col) && <span className="ml-1 text-primary-500">🔑</span>}
+                                                                    </th>
                                                                 ))}
                                                             </tr>
-                                                        )}
-                                                        {tableData?.rows?.map((row, i) => {
-                                                            const isRowEditing = editingRowPk === getPrimaryKeyValue(row);
-
-                                                            return (
-                                                                <tr key={i} className={`border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors group ${isRowEditing ? 'bg-blue-50' : ''}`}>
-                                                                    <td className="px-4 py-2 relative whitespace-nowrap">
-                                                                        {isRowEditing ? (
-                                                                            <div className="flex gap-1">
-                                                                                <button onClick={saveRowEdit} className="p-1 text-green-600 hover:bg-green-100 rounded" title="Save">
-                                                                                    <Save size={14} />
-                                                                                </button>
-                                                                                <button onClick={cancelRowEdit} className="p-1 text-red-500 hover:bg-red-100 rounded" title="Cancel">
-                                                                                    <X size={14} />
-                                                                                </button>
-                                                                            </div>
-                                                                        ) : (
-                                                                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                                <button onClick={() => handleRowEditClick(row)} className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Edit Row">
-                                                                                    <Pencil size={14} />
-                                                                                </button>
-                                                                                <button onClick={() => deleteRow(row)} className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Delete Row">
-                                                                                    <Trash2 size={14} />
-                                                                                </button>
-                                                                            </div>
-                                                                        )}
+                                                        </thead>
+                                                        <tbody>
+                                                            {isAddingRow && (
+                                                                <tr className="bg-green-50 border-b border-green-200">
+                                                                    <td className="px-4 py-2">
+                                                                        <div className="flex gap-1">
+                                                                            <button onClick={saveNewRow} className="p-1 text-green-600 hover:bg-green-100 rounded"><Save size={14} /></button>
+                                                                            <button onClick={() => setIsAddingRow(false)} className="p-1 text-slate-500 hover:bg-slate-100 rounded"><X size={14} /></button>
+                                                                        </div>
                                                                     </td>
-                                                                    {tableData.columns.map(col => {
-                                                                        // Row Edit Mode
-                                                                        if (isRowEditing) {
-                                                                            const isPk = primaryKeys.includes(col);
-                                                                            const isAutoIncrement = tableStructure.find(c => c.name === col)?.autoincrement;
-                                                                            const disabled = isPk && isAutoIncrement; // Can we edit PKs? Usually unsafe if it's the identifier. Let's disable for now.
+                                                                    {tableData?.columns?.map(col => (
+                                                                        <td key={col} className="px-4 py-2">
+                                                                            <input
+                                                                                value={newRowData[col] || ''}
+                                                                                onChange={e => setNewRowData({ ...newRowData, [col]: e.target.value })}
+                                                                                className="w-full px-2 py-1 border border-green-300 rounded text-sm bg-white"
+                                                                                placeholder={tableStructure.find(c => c.name === col)?.autoincrement ? '(auto)' : ''}
+                                                                                disabled={tableStructure.find(c => c.name === col)?.autoincrement}
+                                                                            />
+                                                                        </td>
+                                                                    ))}
+                                                                </tr>
+                                                            )}
+                                                            {tableData?.rows?.map((row, i) => {
+                                                                const isRowEditing = editingRowPk === getPrimaryKeyValue(row);
 
+                                                                return (
+                                                                    <tr key={i} className={`border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors group ${isRowEditing ? 'bg-blue-50' : ''}`}>
+                                                                        <td className="px-4 py-2 relative whitespace-nowrap">
+                                                                            {isRowEditing ? (
+                                                                                <div className="flex gap-1">
+                                                                                    <button onClick={saveRowEdit} className="p-1 text-green-600 hover:bg-green-100 rounded" title="Save">
+                                                                                        <Save size={14} />
+                                                                                    </button>
+                                                                                    <button onClick={cancelRowEdit} className="p-1 text-red-500 hover:bg-red-100 rounded" title="Cancel">
+                                                                                        <X size={14} />
+                                                                                    </button>
+                                                                                </div>
+                                                                            ) : (
+                                                                                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                                    <button onClick={() => handleRowEditClick(row)} className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Edit Row">
+                                                                                        <Pencil size={14} />
+                                                                                    </button>
+                                                                                    <button onClick={() => deleteRow(row)} className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Delete Row">
+                                                                                        <Trash2 size={14} />
+                                                                                    </button>
+                                                                                </div>
+                                                                            )}
+                                                                        </td>
+                                                                        {tableData.columns.map(col => {
+                                                                            // Row Edit Mode
+                                                                            if (isRowEditing) {
+                                                                                const isPk = primaryKeys.includes(col);
+                                                                                const isAutoIncrement = tableStructure.find(c => c.name === col)?.autoincrement;
+                                                                                const disabled = isPk && isAutoIncrement; // Can we edit PKs? Usually unsafe if it's the identifier. Let's disable for now.
+
+                                                                                return (
+                                                                                    <td key={col} className="px-4 py-2">
+                                                                                        <input
+                                                                                            value={editingRowData[col] || ''}
+                                                                                            onChange={e => setEditingRowData({ ...editingRowData, [col]: e.target.value })}
+                                                                                            className={`w-full px-2 py-1 border rounded text-sm bg-white ${disabled ? 'bg-slate-100 text-slate-400' : 'border-blue-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none'}`}
+                                                                                            disabled={!!disabled}
+                                                                                        />
+                                                                                    </td>
+                                                                                );
+                                                                            }
+
+                                                                            // Normal Mode (Cell Edit support)
+                                                                            const isEditing = editingCell?.rowPk === getPrimaryKeyValue(row) && editingCell?.colName === col;
+                                                                            const val = row[col];
                                                                             return (
-                                                                                <td key={col} className="px-4 py-2">
-                                                                                    <input
-                                                                                        value={editingRowData[col] || ''}
-                                                                                        onChange={e => setEditingRowData({ ...editingRowData, [col]: e.target.value })}
-                                                                                        className={`w-full px-2 py-1 border rounded text-sm bg-white ${disabled ? 'bg-slate-100 text-slate-400' : 'border-blue-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none'}`}
-                                                                                        disabled={!!disabled}
-                                                                                    />
+                                                                                <td
+                                                                                    key={col}
+                                                                                    onClick={() => !primaryKeys.includes(col) && handleCellClick(row, col)}
+                                                                                    className={`px-4 py-2 font-mono text-slate-700 cursor-pointer ${isEditing ? 'p-0' : ''}`}
+                                                                                >
+                                                                                    {isEditing ? (
+                                                                                        <input
+                                                                                            autoFocus
+                                                                                            value={editingValue}
+                                                                                            onChange={e => setEditingValue(e.target.value)}
+                                                                                            onBlur={saveCellEdit}
+                                                                                            onKeyDown={e => {
+                                                                                                if (e.key === 'Enter') {
+                                                                                                    e.preventDefault();
+                                                                                                    saveCellEdit();
+                                                                                                }
+                                                                                                if (e.key === 'Escape') {
+                                                                                                    setEditingCell(null);
+                                                                                                    setEditingValue('');
+                                                                                                }
+                                                                                            }}
+                                                                                            className="w-full h-full px-2 py-1 border-2 border-primary-500 outline-none"
+                                                                                        />
+                                                                                    ) : (
+                                                                                        // Raw value display with Timestamp Hover
+                                                                                        (() => {
+                                                                                            let titleHex = undefined;
+                                                                                            const numVal = Number(val);
+                                                                                            if (val !== null && !isNaN(numVal) && typeof val !== 'boolean') {
+                                                                                                // Check for likely timestamp (Seconds: > Year 2000, < Year 2100; Milliseconds: corresponding range)
+                                                                                                // Year 2000 (s): 946684800 | (ms): 946684800000
+                                                                                                // Year 2100 (s): 4102444800 | (ms): 4102444800000
+                                                                                                if (numVal > 946684800 && numVal < 4102444800) {
+                                                                                                    titleHex = `Epoch (s): ${new Date(numVal * 1000).toLocaleString()}`;
+                                                                                                } else if (numVal > 946684800000 && numVal < 4102444800000) {
+                                                                                                    titleHex = `Epoch (ms): ${new Date(numVal).toLocaleString()}`;
+                                                                                                }
+                                                                                            }
+                                                                                            return (
+                                                                                                <span
+                                                                                                    className={val === null ? "text-slate-400 italic" : ""}
+                                                                                                    title={titleHex}
+                                                                                                >
+                                                                                                    {val === null ? "NULL" : String(val)}
+                                                                                                </span>
+                                                                                            );
+                                                                                        })()
+                                                                                    )}
                                                                                 </td>
                                                                             );
-                                                                        }
-
-                                                                        // Normal Mode (Cell Edit support)
-                                                                        const isEditing = editingCell?.rowPk === getPrimaryKeyValue(row) && editingCell?.colName === col;
-                                                                        const val = row[col];
-                                                                        return (
-                                                                            <td
-                                                                                key={col}
-                                                                                onClick={() => !primaryKeys.includes(col) && handleCellClick(row, col)}
-                                                                                className={`px-4 py-2 font-mono text-slate-700 cursor-pointer ${isEditing ? 'p-0' : ''}`}
-                                                                            >
-                                                                                {isEditing ? (
-                                                                                    <input
-                                                                                        autoFocus
-                                                                                        value={editingValue}
-                                                                                        onChange={e => setEditingValue(e.target.value)}
-                                                                                        onBlur={saveCellEdit}
-                                                                                        onKeyDown={e => {
-                                                                                            if (e.key === 'Enter') {
-                                                                                                e.preventDefault();
-                                                                                                saveCellEdit();
-                                                                                            }
-                                                                                            if (e.key === 'Escape') {
-                                                                                                setEditingCell(null);
-                                                                                                setEditingValue('');
-                                                                                            }
-                                                                                        }}
-                                                                                        className="w-full h-full px-2 py-1 border-2 border-primary-500 outline-none"
-                                                                                    />
-                                                                                ) : (
-                                                                                    // Raw value display with Timestamp Hover
-                                                                                    (() => {
-                                                                                        let titleHex = undefined;
-                                                                                        const numVal = Number(val);
-                                                                                        if (val !== null && !isNaN(numVal) && typeof val !== 'boolean') {
-                                                                                            // Check for likely timestamp (Seconds: > Year 2000, < Year 2100; Milliseconds: corresponding range)
-                                                                                            // Year 2000 (s): 946684800 | (ms): 946684800000
-                                                                                            // Year 2100 (s): 4102444800 | (ms): 4102444800000
-                                                                                            if (numVal > 946684800 && numVal < 4102444800) {
-                                                                                                titleHex = `Epoch (s): ${new Date(numVal * 1000).toLocaleString()}`;
-                                                                                            } else if (numVal > 946684800000 && numVal < 4102444800000) {
-                                                                                                titleHex = `Epoch (ms): ${new Date(numVal).toLocaleString()}`;
-                                                                                            }
-                                                                                        }
-                                                                                        return (
-                                                                                            <span
-                                                                                                className={val === null ? "text-slate-400 italic" : ""}
-                                                                                                title={titleHex}
-                                                                                            >
-                                                                                                {val === null ? "NULL" : String(val)}
-                                                                                            </span>
-                                                                                        );
-                                                                                    })()
-                                                                                )}
-                                                                            </td>
-                                                                        );
-                                                                    })}
-                                                                </tr>
-                                                            );
-                                                        })}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                            {/* Pagination */}
-                                            <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-sm text-slate-500 mr-2">
-                                                        Page {tableData?.pagination?.page} of {tableData?.pagination?.total_pages}
-                                                    </span>
+                                                                        })}
+                                                                    </tr>
+                                                                );
+                                                            })}
+                                                        </tbody>
+                                                    </table>
                                                 </div>
-
-                                                <div className="flex items-center gap-1">
-                                                    <button
-                                                        onClick={() => setPage(1)}
-                                                        disabled={page === 1}
-                                                        className="p-1 border rounded hover:bg-white disabled:opacity-50 text-slate-500"
-                                                        title="First Page"
-                                                    >
-                                                        <span style={{ fontSize: '10px' }}>&laquo;</span>
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setPage(p => Math.max(1, p - 1))}
-                                                        disabled={page === 1}
-                                                        className="p-1 border rounded hover:bg-white disabled:opacity-50 text-slate-500"
-                                                        title="Previous Page"
-                                                    >
-                                                        <ChevronLeft size={16} />
-                                                    </button>
-
-                                                    {/* Numbered Buttons */}
-                                                    <div className="flex items-center gap-1 mx-2">
-                                                        {Array.from({ length: Math.min(5, tableData?.pagination?.total_pages || 1) }, (_, i) => {
-                                                            const totalPages = tableData?.pagination?.total_pages || 1;
-                                                            let p = i + 1;
-                                                            if (totalPages > 5) {
-                                                                if (page <= 3) { p = i + 1; }
-                                                                else if (page >= totalPages - 2) { p = totalPages - 4 + i; }
-                                                                else { p = page - 2 + i; }
-                                                            }
-                                                            return (
-                                                                <button
-                                                                    key={p}
-                                                                    onClick={() => setPage(p)}
-                                                                    disabled={p === page}
-                                                                    className={`w-8 h-8 flex items-center justify-center rounded border text-sm transition-colors ${p === page
-                                                                        ? 'bg-primary-600 text-white border-primary-600 font-medium'
-                                                                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
-                                                                        }`}
-                                                                >
-                                                                    {p}
-                                                                </button>
-                                                            );
-                                                        })}
+                                                {/* Pagination */}
+                                                <div className="px-4 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-sm text-slate-500 mr-2">
+                                                            Page {tableData?.pagination?.page} of {tableData?.pagination?.total_pages}
+                                                        </span>
                                                     </div>
 
-                                                    <button
-                                                        onClick={() => setPage(p => Math.min(tableData?.pagination?.total_pages || 1, p + 1))}
-                                                        disabled={page === (tableData?.pagination?.total_pages || 1)}
-                                                        className="p-1 border rounded hover:bg-white disabled:opacity-50 text-slate-500"
-                                                        title="Next Page"
-                                                    >
-                                                        <ChevronRight size={16} />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => setPage(tableData?.pagination?.total_pages || 1)}
-                                                        disabled={page === (tableData?.pagination?.total_pages || 1)}
-                                                        className="p-1 border rounded hover:bg-white disabled:opacity-50 text-slate-500"
-                                                        title="Last Page"
-                                                    >
-                                                        <span style={{ fontSize: '10px' }}>&raquo;</span>
-                                                    </button>
+                                                    <div className="flex items-center gap-1">
+                                                        <button
+                                                            onClick={() => setPage(1)}
+                                                            disabled={page === 1}
+                                                            className="p-1 border rounded hover:bg-white disabled:opacity-50 text-slate-500"
+                                                            title="First Page"
+                                                        >
+                                                            <span style={{ fontSize: '10px' }}>&laquo;</span>
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setPage(p => Math.max(1, p - 1))}
+                                                            disabled={page === 1}
+                                                            className="p-1 border rounded hover:bg-white disabled:opacity-50 text-slate-500"
+                                                            title="Previous Page"
+                                                        >
+                                                            <ChevronLeft size={16} />
+                                                        </button>
+
+                                                        {/* Numbered Buttons */}
+                                                        <div className="flex items-center gap-1 mx-2">
+                                                            {Array.from({ length: Math.min(5, tableData?.pagination?.total_pages || 1) }, (_, i) => {
+                                                                const totalPages = tableData?.pagination?.total_pages || 1;
+                                                                let p = i + 1;
+                                                                if (totalPages > 5) {
+                                                                    if (page <= 3) { p = i + 1; }
+                                                                    else if (page >= totalPages - 2) { p = totalPages - 4 + i; }
+                                                                    else { p = page - 2 + i; }
+                                                                }
+                                                                return (
+                                                                    <button
+                                                                        key={p}
+                                                                        onClick={() => setPage(p)}
+                                                                        disabled={p === page}
+                                                                        className={`w-8 h-8 flex items-center justify-center rounded border text-sm transition-colors ${p === page
+                                                                            ? 'bg-primary-600 text-white border-primary-600 font-medium'
+                                                                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+                                                                            }`}
+                                                                    >
+                                                                        {p}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+
+                                                        <button
+                                                            onClick={() => setPage(p => Math.min(tableData?.pagination?.total_pages || 1, p + 1))}
+                                                            disabled={page === (tableData?.pagination?.total_pages || 1)}
+                                                            className="p-1 border rounded hover:bg-white disabled:opacity-50 text-slate-500"
+                                                            title="Next Page"
+                                                        >
+                                                            <ChevronRight size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setPage(tableData?.pagination?.total_pages || 1)}
+                                                            disabled={page === (tableData?.pagination?.total_pages || 1)}
+                                                            className="p-1 border rounded hover:bg-white disabled:opacity-50 text-slate-500"
+                                                            title="Last Page"
+                                                        >
+                                                            <span style={{ fontSize: '10px' }}>&raquo;</span>
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        </div>
+
+                                        </>
                                     )}
                                 </div>
                             )}

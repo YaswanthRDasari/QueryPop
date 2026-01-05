@@ -136,7 +136,7 @@ class DBConnector:
             raise Exception("Not connected to any database")
         return inspect(self.engine)
 
-    def execute_query(self, sql_query):
+    def execute_query(self, sql_query, profile=False):
         """
         Executes a raw SQL query and returns results.
         Should only be called after safety validation.
@@ -146,8 +146,31 @@ class DBConnector:
             
         try:
             with self.engine.connect() as conn:
+                # Enable profiling if requested (MySQL only)
+                profiling_enabled = False
+                if profile and self.db_type == "mysql":
+                    try:
+                        conn.execute(text("SET PROFILING = 1"))
+                        profiling_enabled = True
+                    except Exception as e:
+                        logger.warning(f"Failed to enable profiling: {e}")
+                        profiling_enabled = False
+
                 # Use stream_results for large datasets if needed, but MVP limits rows
                 result = conn.execute(text(sql_query))
+                
+                profile_stats = []
+                if profiling_enabled:
+                    try:
+                        profile_res = conn.execute(text("SHOW PROFILE"))
+                        # Use keys() to get column names
+                        profile_columns = list(profile_res.keys())
+                        profile_stats = [dict(zip(profile_columns, row)) for row in profile_res.fetchall()]
+                        logger.info(f"Fetched {len(profile_stats)} profiling records.")
+                        # Disable profiling to be clean
+                        conn.execute(text("SET PROFILING = 0"))
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch profile stats: {e}")
                 
                 # Check if query returns rows (SELECT)
                 if result.returns_rows:
@@ -157,7 +180,8 @@ class DBConnector:
                         "success": True,
                         "columns": columns,
                         "rows": rows,
-                        "row_count": len(rows)
+                        "row_count": len(rows),
+                        "profile_stats": profile_stats
                     }
                 else:
                     # Non-SELECT queries (though validation should prevent these)
@@ -165,7 +189,8 @@ class DBConnector:
                         "success": True,
                         "columns": [],
                         "rows": [],
-                        "row_count": result.rowcount
+                        "row_count": result.rowcount,
+                        "profile_stats": profile_stats
                     }
         except SQLAlchemyError as e:
             logger.error(f"Query execution error: {str(e)}")

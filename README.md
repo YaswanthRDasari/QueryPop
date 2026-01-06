@@ -37,8 +37,8 @@ cd backend
 python -m venv venv
 # Windows: venv\Scripts\activate
 # Linux/Mac: source venv/bin/activate
-pip install -r requirements.txt
-python -m uvicorn main:app --reload --port 5000
+pippython -m uvicorn main:app --reload --port 5000 install -r requirements.txt
+
 ```
 Backend runs on `http://localhost:5000`.
 

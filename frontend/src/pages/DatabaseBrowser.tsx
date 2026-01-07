@@ -1013,7 +1013,7 @@ export const DatabaseBrowser: React.FC = () => {
                                                         checked={showProfiling}
                                                         onChange={(e) => setShowProfiling(e.target.checked)}
                                                     />
-                                                    Profiling.
+                                                    Profiling
                                                 </label>
 
                                                 <span className="text-slate-300">|</span>

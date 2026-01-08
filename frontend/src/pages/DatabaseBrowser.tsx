@@ -211,7 +211,7 @@ export const DatabaseBrowser: React.FC = () => {
 
 
 
-    const handleExportResults = (format: 'csv' | 'json') => {
+    const handleExportResults = (format: 'csv' | 'json' | 'sql') => {
         if (!tableData?.rows || tableData.rows.length === 0) {
             message.warning('No data to export');
             return;
@@ -235,12 +235,33 @@ export const DatabaseBrowser: React.FC = () => {
                 }).join(','))
             ].join('\n');
             filename += '.csv';
-        } else {
+        } else if (format === 'json') {
             content = JSON.stringify(tableData.rows, null, 2);
             filename += '.json';
+        } else if (format === 'sql') {
+            const headers = tableData.columns || Object.keys(tableData.rows[0]);
+            const tableName = selectedTable || 'table_name';
+
+            // Generate SQL INSERT statements
+            const sqlStatements = tableData.rows.map(row => {
+                const values = headers.map(header => {
+                    const cell = row[header];
+                    if (cell === null || cell === undefined) return 'NULL';
+                    if (typeof cell === 'number') return String(cell);
+                    if (typeof cell === 'boolean') return cell ? '1' : '0';
+                    // Escape single quotes for SQL strings
+                    const cellStr = String(cell).replace(/'/g, "''");
+                    return `'${cellStr}'`;
+                }).join(', ');
+
+                return `INSERT INTO \`${tableName}\` (\`${headers.join('`, `')}\`) VALUES (${values});`;
+            });
+
+            content = sqlStatements.join('\n');
+            filename += '.sql';
         }
 
-        const blob = new Blob([content], { type: format === 'csv' ? 'text/csv;charset=utf-8;' : 'application/json;charset=utf-8;' });
+        const blob = new Blob([content], { type: format === 'csv' ? 'text/csv;charset=utf-8;' : format === 'json' ? 'application/json;charset=utf-8;' : 'text/plain;charset=utf-8;' });
         const link = document.createElement('a');
         if (link.download !== undefined) {
             const url = URL.createObjectURL(blob);
@@ -1464,7 +1485,7 @@ export const DatabaseBrowser: React.FC = () => {
                         </div>
                         <div className="p-6">
                             <p className="text-slate-600 mb-6 text-sm">Choose the format you would like to export your query results in.</p>
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-3 gap-4">
                                 <button
                                     onClick={() => {
                                         handleExportResults('csv');
@@ -1484,6 +1505,16 @@ export const DatabaseBrowser: React.FC = () => {
                                 >
                                     <FileCode size={32} className="text-slate-400 group-hover:text-primary-500 transition-colors" />
                                     <span className="font-medium text-slate-700 group-hover:text-primary-700">JSON</span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        handleExportResults('sql');
+                                        setShowExportDialog(false);
+                                    }}
+                                    className="flex flex-col items-center gap-3 p-4 rounded-lg border border-slate-200 hover:border-primary-500 hover:bg-primary-50 transition-all group"
+                                >
+                                    <Database size={32} className="text-slate-400 group-hover:text-primary-500 transition-colors" />
+                                    <span className="font-medium text-slate-700 group-hover:text-primary-700">SQL</span>
                                 </button>
                             </div>
                         </div>

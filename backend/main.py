@@ -4,7 +4,6 @@ import logging
 import threading
 import uuid
 from typing import Dict, Any
-
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.wsgi import WSGIMiddleware

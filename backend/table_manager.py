@@ -284,18 +284,60 @@ class TableManager:
             
             where_clauses = []
             params = {}
+            display_where_clauses = [] # For the UI string
             
             if filters:
                 for col, val in filters.items():
-                    # Simple LIKE matching for now
-                    # We use named parameters to prevent SQL injection
                     clean_col = col.replace("`", "") # Basic sanitization
-                    where_clauses.append(f"`{clean_col}` LIKE :filter_{clean_col}")
-                    params[f"filter_{clean_col}"] = f"%{val}%"
+                    param_name = f"filter_{clean_col}"
+                    
+                    # Parse operator from value if present
+                    # Front end sends format: "OPERATOR value" or just "value" (default to LIKE)
+                    operator = "LIKE"
+                    filter_val = val
+                    
+                    # Check for known operators at start of string
+                    # Operators: LIKE, =, !=, >, <, >=, <=, IS NULL, IS NOT NULL
+                    known_ops = ['IS NOT NULL', 'IS NULL', '>=', '<=', '!=', 'LIKE', '=', '>', '<']
+                    
+                    for op in known_ops:
+                        if val.upper().startswith(op):
+                            operator = op
+                            # For IS NULL / IS NOT NULL, there is no value
+                            if op in ['IS NULL', 'IS NOT NULL']:
+                                filter_val = None
+                            else:
+                                filter_val = val[len(op):].strip()
+                            break
+                    
+                    # Construct clause based on operator
+                    if operator in ['IS NULL', 'IS NOT NULL']:
+                        clause = f"`{clean_col}` {operator}"
+                        where_clauses.append(clause)
+                        display_where_clauses.append(clause)
+                    else:
+                        clause = f"`{clean_col}` {operator} :{param_name}"
+                        where_clauses.append(clause)
+                        
+                        # Handle value formatting for LIKE if not already present
+                        if operator == 'LIKE':
+                            # Frontend usually sends "%val%" but let's be safe. 
+                            # Actually frontend sends "LIKE %val%" so filter_val has "%val%" already.
+                            pass
+                        
+                        params[param_name] = filter_val
+                        
+                        # Interpolate for display
+                        # Simple escaping for display purposes
+                        display_val = str(filter_val).replace("'", "''")
+                        display_where_clauses.append(f"`{clean_col}` {operator} '{display_val}'")
             
             where_stmt = ""
+            display_where_stmt = ""
+            
             if where_clauses:
                 where_stmt = "WHERE " + " AND ".join(where_clauses)
+                display_where_stmt = "WHERE " + " AND ".join(display_where_clauses)
 
             order_clause = ""
             if order_by:
@@ -307,6 +349,7 @@ class TableManager:
             
             # Get data with pagination
             data_query = f"SELECT * FROM `{table_name}` {where_stmt}{order_clause} LIMIT {per_page} OFFSET {offset}"
+            display_query = f"SELECT * FROM `{table_name}` {display_where_stmt}{order_clause} LIMIT {per_page} OFFSET {offset}"
             
             start_time = time.time()
             with self.db_connector.engine.connect() as conn:
@@ -329,7 +372,7 @@ class TableManager:
                     "table_name": table_name,
                     "columns": columns,
                     "rows": rows,
-                    "sql_query": data_query,
+                    "sql_query": display_query, # Return interpolated query for display
                     "execution_time": execution_time,
                     "pagination": {
                         "page": page,

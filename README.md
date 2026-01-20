@@ -32,17 +32,12 @@ An AI-assisted database GUI tool that lets you ask questions about your data in 
 ## Local Development
 
 ### Backend
-```bash
 cd backend
 python -m venv venv
 # Windows: venv\Scripts\activate
 # Linux/Mac: source venv/bin/activate
-pippython -m uvicorn main:app --reload --port 5000 install -r requirements.txt
-
-```
-Backend runs on `http://localhost:5000`.
-
-### Frontend
+pip install -r requirements.txt
+python -m uvicorn main:app --reload --port 5000
 ```bash
 cd frontend
 npm install

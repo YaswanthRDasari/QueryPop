@@ -9,7 +9,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.wsgi import WSGIMiddleware
 import os
 
-
 # Set flag before importing Flask app to prevent double CORS headers
 os.environ["FASTAPI_MODE"] = "1"
 
